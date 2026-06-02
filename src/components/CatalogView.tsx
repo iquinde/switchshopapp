@@ -72,11 +72,11 @@ const CatalogView: React.FC<CatalogViewProps> = ({
     <main>
       <Hero user={user} settings={settings} />
 
-      <section id="productos" className="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section id="productos" className="scroll-mt-24 py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
           {activeCompany && (
             <div className="mb-8 inline-flex items-center gap-3 bg-stone-50 border border-stone-200/60 text-stone-850 px-4 py-2.5 rounded-2xl shadow-sm text-xs sm:text-sm animate-in fade-in duration-300">
-              <span className="font-bold">🏪 Catálogo Exclusivo de <strong className="text-[#8b5a2b] font-serif font-bold text-sm tracking-tight">{activeCompany.storeName}</strong></span>
+              <span className="font-bold">🏪 Tienda de <strong className="text-[#8b5a2b] font-serif font-bold text-sm tracking-tight">{activeCompany.storeName}</strong></span>
               {onClearActiveCompany && (
                 <button 
                   onClick={onClearActiveCompany}
@@ -161,7 +161,7 @@ const CatalogView: React.FC<CatalogViewProps> = ({
       </section>
 
       {/* Features & Footer */}
-      <section className="bg-stone-900 py-24 text-white">
+      <section id="nosotros" className="scroll-mt-24 bg-stone-900 py-24 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 text-center">
             {/* Item 1 */}
@@ -211,7 +211,7 @@ const CatalogView: React.FC<CatalogViewProps> = ({
         </div>
       </section>
 
-      <footer className="bg-white border-t border-stone-100 pt-20 pb-10">
+      <footer id="contacto" className="scroll-mt-24 bg-white border-t border-stone-100 pt-20 pb-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-stone-400 text-sm">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16 text-left">
             <div className="space-y-4">

@@ -223,7 +223,7 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
       {/* Title block */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 px-1">
         <div>
-          <h2 className="text-xl sm:text-3xl font-serif font-bold text-stone-900">Configuración de Catálogo</h2>
+          <h2 className="text-xl sm:text-3xl font-serif font-bold text-stone-900">Configuración de Tienda</h2>
           <p className="text-stone-500 text-xs sm:text-sm">Personaliza el diseño, textos, imágenes y paleta de colores del banner principal de tus clientes.</p>
         </div>
       </div>
@@ -270,7 +270,7 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
           <form onSubmit={handleSave} className="bg-white p-6 rounded-2xl sm:rounded-3xl border border-stone-100 shadow-sm space-y-6">
             <div className="flex items-center space-x-2 border-b border-stone-100 pb-3">
               <Layout size={18} className="text-stone-400" />
-              <h3 className="text-sm font-bold text-stone-900 uppercase tracking-widest">Ajustes Generales del Catálogo</h3>
+              <h3 className="text-sm font-bold text-stone-900 uppercase tracking-widest">Ajustes Generales de la Tienda</h3>
             </div>
 
             <div className="space-y-4">
@@ -637,7 +637,7 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
               {saveSuccess ? (
                 <div className="flex items-center space-x-1.5 text-xs text-green-600 font-semibold animate-in fade-in duration-300">
                   <CheckCircle2 size={16} />
-                  <span>¡Configuración guardada! El catálogo se actualizó en tiempo real.</span>
+                  <span>¡Configuración guardada! La tienda se actualizó en tiempo real.</span>
                 </div>
               ) : (
                 <span className="text-[10px] text-stone-400 flex items-center gap-1 font-light">
@@ -676,7 +676,7 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
               <h3 className="text-sm font-bold text-stone-900 uppercase tracking-widest">Vista Previa Real</h3>
             </div>
             
-            <p className="text-xs text-stone-400">Así es como verán los clientes el catálogo comercial en sus dispositivos:</p>
+            <p className="text-xs text-stone-400">Así es como verán los clientes la tienda comercial en sus dispositivos:</p>
 
             {/* Mockup Frame */}
             <div className="border border-stone-200 rounded-2xl overflow-hidden shadow-sm bg-stone-50">

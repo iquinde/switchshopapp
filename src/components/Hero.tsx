@@ -26,7 +26,8 @@ export default function Hero({ user, settings }: HeroProps) {
   const isLightText = settings?.heroTextColor !== 'dark';
 
   return (
-    <section 
+    <section
+      id="inicio"
       className="relative h-screen flex items-center overflow-hidden animate-in fade-in duration-700"
       style={bgType !== 'image' ? { background: bgColor } : undefined}
     >
@@ -93,7 +94,7 @@ export default function Hero({ user, settings }: HeroProps) {
               <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
             </a>
             <a
-              href="#"
+              href="#nosotros"
               className={`inline-flex items-center justify-center px-8 py-4 rounded-full font-bold border transition-all duration-300 text-sm sm:text-base ${
                 isLightText
                   ? 'text-white border-white/30 hover:bg-white/10'

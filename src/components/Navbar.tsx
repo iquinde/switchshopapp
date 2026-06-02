@@ -9,17 +9,57 @@ interface NavbarProps {
   onLogin: () => void;
   onLogout: () => void;
   storeName?: string;
+  storeBasePath?: string;
 }
 
-export default function Navbar({ cartCount, onCartClick, user, onLogin, onLogout, storeName = 'SwitchShop' }: NavbarProps) {
+type NavKey = 'inicio' | 'productos' | 'nosotros' | 'contacto';
+
+const navItems: Array<{ key: NavKey; label: string; hash: string }> = [
+  { key: 'inicio', label: 'Inicio', hash: '' },
+  { key: 'productos', label: 'Productos', hash: 'productos' },
+  { key: 'nosotros', label: 'Nosotros', hash: 'nosotros' },
+  { key: 'contacto', label: 'Contacto', hash: 'contacto' },
+];
+
+export default function Navbar({ cartCount, onCartClick, user, onLogin, onLogout, storeName = 'SwitchShop', storeBasePath }: NavbarProps) {
   const [isScrolled, setIsScrolled] = React.useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const normalizedStoreBasePath = storeBasePath?.replace(/\/$/, '');
 
   React.useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  const getNavHref = (item: (typeof navItems)[number]) => {
+    if (normalizedStoreBasePath) {
+      return item.key === 'inicio' ? normalizedStoreBasePath : `${normalizedStoreBasePath}/${item.key}`;
+    }
+
+    return item.hash ? `#${item.hash}` : '#';
+  };
+
+  const handleNavClick = (item: (typeof navItems)[number]) => (event: React.MouseEvent<HTMLAnchorElement>) => {
+    setIsMobileMenuOpen(false);
+
+    if (!normalizedStoreBasePath) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const nextPath = item.key === 'inicio' ? normalizedStoreBasePath : `${normalizedStoreBasePath}/${item.key}`;
+    window.history.pushState({}, '', nextPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+
+    if (item.key === 'inicio') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    document.getElementById(item.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 transition-all duration-300 bg-white border-b border-stone-100 py-3.5 shadow-sm">
@@ -33,10 +73,16 @@ export default function Navbar({ cartCount, onCartClick, user, onLogin, onLogout
 
           {/* Desktop Menu */}
           <div className="hidden md:flex items-center space-x-8">
-            <a href="#" className="text-sm font-medium text-stone-600 hover:text-primary transition-colors">Inicio</a>
-            <a href="#productos" className="text-sm font-medium text-stone-600 hover:text-primary transition-colors">Colección</a>
-            <a href="#" className="text-sm font-medium text-stone-600 hover:text-primary transition-colors">Nosotros</a>
-            <a href="#" className="text-sm font-medium text-stone-600 hover:text-primary transition-colors">Contacto</a>
+            {navItems.map(item => (
+              <a
+                key={item.key}
+                href={getNavHref(item)}
+                onClick={handleNavClick(item)}
+                className="text-sm font-medium text-stone-600 hover:text-primary transition-colors"
+              >
+                {item.label}
+              </a>
+            ))}
           </div>
 
           <div className="flex items-center space-x-4">
@@ -103,10 +149,16 @@ export default function Navbar({ cartCount, onCartClick, user, onLogin, onLogout
             className="md:hidden bg-white border-t border-stone-100 overflow-hidden"
           >
             <div className="px-4 pt-2 pb-6 space-y-1">
-              <a href="#" className="block px-3 py-2 text-base font-medium text-stone-600 hover:text-primary">Inicio</a>
-              <a href="#productos" className="block px-3 py-2 text-base font-medium text-stone-600 hover:text-primary">Colección</a>
-              <a href="#" className="block px-3 py-2 text-base font-medium text-stone-600 hover:text-primary">Nosotros</a>
-              <a href="#" className="block px-3 py-2 text-base font-medium text-stone-600 hover:text-primary">Contacto</a>
+              {navItems.map(item => (
+                <a
+                  key={item.key}
+                  href={getNavHref(item)}
+                  onClick={handleNavClick(item)}
+                  className="block px-3 py-2 text-base font-medium text-stone-600 hover:text-primary"
+                >
+                  {item.label}
+                </a>
+              ))}
 
               <div className="border-t border-stone-100 pt-4 mt-4 px-3">
                 {user ? (

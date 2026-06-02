@@ -74,7 +74,7 @@ function LoginScreen({ onLogin, isLoggingIn, loginError }: LoginScreenProps) {
               <div>
                 <h2 className="text-3xl font-serif font-bold tracking-tight text-white lg:text-stone-950">Iniciar sesion</h2>
                 <p className="mt-3 text-sm leading-6 text-white/62 lg:text-stone-500">
-                  Ingresa con tu cuenta autorizada para acceder al catalogo, panel administrativo y modulos del sistema.
+                  Ingresa con tu cuenta autorizada para acceder a la tienda, panel administrativo y modulos del sistema.
                 </p>
               </div>
 
@@ -106,13 +106,16 @@ function LoginScreen({ onLogin, isLoggingIn, loginError }: LoginScreenProps) {
   );
 }
 
+const STORE_ROUTE_PREFIX = 'tienda';
+const STORE_SECTION_SLUGS = new Set(['inicio', 'productos', 'nosotros', 'contacto']);
+
 function isStorefrontRoute() {
   const searchParams = new URLSearchParams(window.location.search);
   const hasStoreQuery = Boolean(searchParams.get('tienda') || searchParams.get('companyId') || searchParams.get('c'));
   const pathParts = window.location.pathname.split('/').filter(Boolean);
   const hashParts = window.location.hash.replace('#', '').split('/').filter(Boolean);
 
-  return hasStoreQuery || pathParts[0] === 'tienda' || hashParts[0] === 'tienda';
+  return hasStoreQuery || pathParts[0] === STORE_ROUTE_PREFIX || hashParts[0] === STORE_ROUTE_PREFIX;
 }
 
 export default function App() {
@@ -156,7 +159,7 @@ export default function App() {
       .replace(/-+/g, '-'); // collapse hyphens
   };
 
-  // Parse company from URL (supports pathnames like /tienda/:id, hash codes /#/tienda/:id, or ?tienda=:id)
+  // Parse company from URL (supports /tienda/:id/:section, /#/tienda/:id, or ?tienda=:id).
   const parseCompanyFromUrl = React.useCallback((allCompanies: Company[]) => {
     if (!allCompanies || allCompanies.length === 0) return;
     
@@ -170,7 +173,11 @@ export default function App() {
     if (hash) {
       const cleanHash = hash.replace('#', '').trim();
       const parts = cleanHash.split('/').filter(Boolean);
-      hashParam = parts[0] === 'tienda' ? (parts[1] || '') : parts[0] || '';
+      if (parts[0] === STORE_ROUTE_PREFIX) {
+        hashParam = parts[1] || '';
+      } else if (!STORE_SECTION_SLUGS.has(parts[0] || '')) {
+        hashParam = parts[0] || '';
+      }
     }
     
     // 3. Path Pattern
@@ -178,10 +185,14 @@ export default function App() {
     let pathParam = '';
     if (pathname && pathname !== '/') {
       const parts = pathname.split('/').filter(Boolean);
-      pathParam = parts[0] === 'tienda' ? (parts[1] || '') : parts[0] || '';
+      if (parts[0] === STORE_ROUTE_PREFIX) {
+        pathParam = parts[1] || '';
+      } else if (!STORE_SECTION_SLUGS.has(parts[0] || '')) {
+        pathParam = parts[0] || '';
+      }
     }
 
-    const targetVal = (shopParam || hashParam || pathParam || '').toLowerCase().trim();
+    const targetVal = (shopParam || pathParam || hashParam || '').toLowerCase().trim();
     if (targetVal) {
       const found = allCompanies.find(c => 
         c.id.toLowerCase() === targetVal || 
@@ -602,6 +613,7 @@ export default function App() {
           onLogin={login}
           onLogout={logout}
           storeName={activeSettings.storeName}
+          storeBasePath={activeCompany ? `/tienda/${slugify(activeCompany.storeName)}` : undefined}
         />
         
         {/* Floating Controls */}

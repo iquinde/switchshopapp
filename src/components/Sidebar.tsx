@@ -108,7 +108,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               animate={{ opacity: 1 }}
               className="ml-3 text-sm"
             >
-              Ver Catálogo
+              Ver Tienda
             </motion.span>
           )}
         </button>

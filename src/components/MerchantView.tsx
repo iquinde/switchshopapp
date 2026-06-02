@@ -119,7 +119,7 @@ const MerchantView: React.FC<MerchantViewProps> = ({
           onClick={onSwitchToCatalog}
           className="text-[11px] font-bold text-stone-600 hover:text-stone-900 flex items-center gap-1.5 bg-stone-50 hover:bg-stone-100 border border-stone-200/60 px-3 py-1.5 rounded-xl transition-all"
         >
-          <span>Ver Catálogo</span>
+          <span>Ver Tienda</span>
         </button>
       </div>
 
