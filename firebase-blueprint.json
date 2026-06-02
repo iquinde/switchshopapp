@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Inventory product",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "stock": { "type": "number" },
+        "image": { "type": "string" },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "category": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "sku": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "price", "stock", "image", "category", "status"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Sales order",
+      "type": "object",
+      "properties": {
+        "items": { "type": "array" },
+        "total": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "completed", "cancelled"] },
+        "paymentMethod": { "type": "string" },
+        "customerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["items", "total", "status", "createdAt"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Business customer",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    },
+    "StoreSettings": {
+      "title": "StoreSettings",
+      "description": "Dynamic layout configuration for the store front-end",
+      "type": "object",
+      "properties": {
+        "storeName": { "type": "string" },
+        "heroTitle": { "type": "string" },
+        "heroSubtitle": { "type": "string" },
+        "heroImage": { "type": "string" },
+        "footerText": { "type": "string" }
+      },
+      "required": ["storeName", "heroTitle", "heroSubtitle", "heroImage", "footerText"]
+    },
+    "PaymentTransaction": {
+      "title": "PaymentTransaction",
+      "description": "A payment transaction/abono logged toward orders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderId": { "type": "string" },
+        "orderNumber": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "referenceNumber": { "type": "string" },
+        "bankName": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "customerId", "amount", "paymentMethod", "date"]
+    },
+    "Company": {
+      "title": "Company",
+      "description": "Tenant company / external vendor account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "ownerEmail": { "type": "string" },
+        "storeName": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "description": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "email": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "ownerEmail", "storeName", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "products": { "schema": "Product" },
+    "orders": { "schema": "Order" },
+    "customers": { "schema": "Customer" },
+    "settings": { "schema": "StoreSettings" },
+    "paymentTransactions": { "schema": "PaymentTransaction" },
+    "companies": { "schema": "Company" }
+  }
+}

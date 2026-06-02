@@ -1,0 +1,175 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (First Rule Block)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email in ["israel.quinde@gmail.com"]) && 
+        request.auth.token.email_verified == true;
+    }
+
+    function hasRequiredFields(data, fields) {
+      return data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(data, fields) {
+      return data.keys().hasOnly(fields);
+    }
+
+    // Product Validator
+    function isValidProduct(data) {
+      return hasRequiredFields(data, ['name', 'price', 'image', 'category', 'createdAt']) &&
+             hasOnlyAllowedFields(data, ['id', 'name', 'description', 'price', 'costPrice', 'stock', 'minStock', 'image', 'images', 'category', 'status', 'sku', 'createdAt', 'updatedAt', 'companyId']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 1000)) &&
+             data.price is number && data.price > 0 &&
+             (!('costPrice' in data) || data.costPrice == null || data.costPrice is number) &&
+             (!('stock' in data) || data.stock == null || (data.stock is number && data.stock >= 0)) &&
+             (!('minStock' in data) || data.minStock == null || (data.minStock is number && data.minStock >= 0)) &&
+             (!('status' in data) || data.status == null || (data.status in ['active', 'inactive'])) &&
+             (!('sku' in data) || data.sku == null || (data.sku is string && data.sku.size() <= 50)) &&
+             data.image is string && (data.image.matches("^https://.*") || data.image.matches("^http://.*") || data.image.matches("^data:image/.*")) &&
+             (!('images' in data) || data.images == null || (data.images is list && data.images.size() <= 10)) &&
+             data.category is string && data.category.size() > 0 && data.category.size() <= 100 &&
+             (!('companyId' in data) || data.companyId == null || (data.companyId is string && data.companyId.size() <= 100));
+    }
+
+    // Settings Validator
+    function isValidSettings(data) {
+      return hasRequiredFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroImage', 'footerText']) &&
+             hasOnlyAllowedFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroImage', 'footerText', 'heroBgType', 'heroBgColor', 'heroTextColor', 'stockAlertPercentage', 'supportPhone', 'supportEmail', 'whatsappNumber']) &&
+             data.storeName is string && data.storeName.size() > 0 && data.storeName.size() <= 100 &&
+             data.heroTitle is string && data.heroTitle.size() > 0 && data.heroTitle.size() <= 200 &&
+             data.heroSubtitle is string && data.heroSubtitle.size() > 0 && data.heroSubtitle.size() <= 1000 &&
+             data.heroImage is string && (data.heroImage.matches("^https://.*") || data.heroImage.matches("^http://.*")) &&
+             data.footerText is string && data.footerText.size() > 0 && data.footerText.size() <= 200 &&
+             (!('heroBgType' in data) || data.heroBgType == null || (data.heroBgType is string)) &&
+             (!('heroBgColor' in data) || data.heroBgColor == null || (data.heroBgColor is string)) &&
+             (!('heroTextColor' in data) || data.heroTextColor == null || (data.heroTextColor is string)) &&
+             (!('stockAlertPercentage' in data) || data.stockAlertPercentage == null || (data.stockAlertPercentage is number)) &&
+             (!('supportPhone' in data) || data.supportPhone == null || (data.supportPhone is string)) &&
+             (!('supportEmail' in data) || data.supportEmail == null || (data.supportEmail is string)) &&
+             (!('whatsappNumber' in data) || data.whatsappNumber == null || (data.whatsappNumber is string));
+    }
+
+    // Customer Validator
+    function isValidCustomer(data) {
+      return hasRequiredFields(data, ['name']) &&
+             hasOnlyAllowedFields(data, ['id', 'name', 'phone', 'address', 'totalSpent', 'currentDebt', 'createdAt', 'lastPurchase', 'email', 'creditLimit', 'companyId', 'status', 'cedula']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (!('phone' in data) || data.phone == null || (data.phone is string && data.phone.size() <= 30)) &&
+             (!('address' in data) || data.address == null || (data.address is string && data.address.size() <= 200)) &&
+             (!('totalSpent' in data) || data.totalSpent == null || (data.totalSpent is number && data.totalSpent >= 0)) &&
+             (!('currentDebt' in data) || data.currentDebt == null || (data.currentDebt is number && data.currentDebt >= 0)) &&
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 100)) &&
+             (!('creditLimit' in data) || data.creditLimit == null || (data.creditLimit is number)) &&
+             (!('companyId' in data) || data.companyId == null || (data.companyId is string && data.companyId.size() <= 100)) &&
+             (!('status' in data) || data.status == null || (data.status is string && data.status.size() <= 30)) &&
+             (!('cedula' in data) || data.cedula == null || (data.cedula is string && data.cedula.size() <= 30));
+    }
+
+    // Order Validator
+    function isValidOrder(data) {
+      return hasRequiredFields(data, ['id', 'items', 'subtotal', 'total', 'status', 'dispatchStatus', 'paymentMethod', 'paymentStatus', 'amountPaid', 'customerName', 'createdAt']) &&
+             hasOnlyAllowedFields(data, ['id', 'items', 'subtotal', 'total', 'status', 'dispatchStatus', 'paymentMethod', 'paymentStatus', 'amountPaid', 'customerId', 'customerName', 'customerPhone', 'customerCedula', 'createdAt', 'notes', 'companyId', 'discount', 'tax']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 100 &&
+             data.items is list && data.items.size() > 0 && data.items.size() <= 50 &&
+             data.subtotal is number && data.subtotal >= 0 &&
+             data.total is number && data.total >= 0 &&
+             data.status is string && data.status in ['pending', 'completed', 'cancelled', 'dispatched'] &&
+             data.dispatchStatus is string && data.dispatchStatus in ['pending', 'shipped', 'delivered', 'dispatched'] &&
+             data.paymentMethod is string && data.paymentMethod in ['cash', 'transfer', 'credit', 'card'] &&
+             data.paymentStatus is string && data.paymentStatus in ['paid', 'unpaid', 'partially_paid'] &&
+             data.amountPaid is number && data.amountPaid >= 0 &&
+             data.customerName is string && data.customerName.size() > 0 && data.customerName.size() <= 100 &&
+             (!('customerPhone' in data) || data.customerPhone == null || (data.customerPhone is string && data.customerPhone.size() <= 30)) &&
+             (!('customerCedula' in data) || data.customerCedula == null || (data.customerCedula is string && data.customerCedula.size() <= 30)) &&
+             (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 1000)) &&
+             (!('companyId' in data) || data.companyId == null || (data.companyId is string && data.companyId.size() <= 100)) &&
+             (!('discount' in data) || data.discount == null || (data.discount is number)) &&
+             (!('tax' in data) || data.tax == null || (data.tax is number));
+    }
+
+    // Payment Transaction Validator
+    function isValidTransaction(data) {
+      return hasRequiredFields(data, ['id', 'customerId', 'customerName', 'amount', 'paymentMethod', 'date']) &&
+             hasOnlyAllowedFields(data, ['id', 'orderId', 'orderNumber', 'customerId', 'customerName', 'amount', 'paymentMethod', 'referenceNumber', 'bankName', 'date', 'notes', 'companyId']) &&
+             data.id is string && data.id.size() > 0 &&
+             data.customerId is string &&
+             data.customerName is string &&
+             data.amount is number && data.amount > 0 &&
+             data.paymentMethod is string &&
+             (!('companyId' in data) || data.companyId == null || (data.companyId is string && data.companyId.size() <= 100));
+    }
+
+    // Company Validator
+    function isValidCompany(data) {
+      return hasRequiredFields(data, ['name', 'ownerEmail', 'storeName', 'status', 'createdAt']) &&
+             hasOnlyAllowedFields(data, ['id', 'name', 'ownerEmail', 'storeName', 'status', 'description', 'phone', 'whatsapp', 'email', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.ownerEmail is string && data.ownerEmail.size() > 0 && data.ownerEmail.size() <= 100 &&
+             data.storeName is string && data.storeName.size() > 0 && data.storeName.size() <= 100 &&
+             data.status is string && data.status in ['active', 'inactive'] &&
+             (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 500)) &&
+             (!('phone' in data) || data.phone == null || (data.phone is string && data.phone.size() <= 50)) &&
+             (!('whatsapp' in data) || data.whatsapp == null || (data.whatsapp is string && data.whatsapp.size() <= 50)) &&
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 100)) &&
+             data.createdAt is string;
+    }
+
+    // ===============================================================
+    // Rules for individual collections
+    // ===============================================================
+
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidProduct(request.resource.data);
+      allow update: if (isAdmin() && isValidProduct(request.resource.data)) || 
+                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock']) && 
+                        request.resource.data.stock is number && 
+                        request.resource.data.stock >= 0 && 
+                        request.resource.data.stock < resource.data.stock);
+      allow delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidSettings(request.resource.data);
+    }
+
+    match /customers/{customerId} {
+      allow read, list, create, update: if true;
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if isValidOrder(request.resource.data);
+      allow update: if isAdmin() || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['items', 'stock']));
+      allow delete: if isAdmin();
+    }
+
+    match /paymentTransactions/{transactionId} {
+      allow read, write: if isAdmin() && isValidTransaction(request.resource.data);
+    }
+
+    match /companies/{companyId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidCompany(request.resource.data);
+    }
+  }
+}
