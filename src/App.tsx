@@ -7,7 +7,7 @@ import CatalogView from './components/CatalogView';
 import ErrorBoundary from './components/ErrorBoundary';
 import { db, auth, googleProvider } from './firebase';
 import { collection, onSnapshot, query, doc } from 'firebase/firestore';
-import { getRedirectResult, onAuthStateChanged, signInWithRedirect, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 import { Product, CartItem, StoreSettings, Company } from './types';
 import { AnimatePresence } from 'motion/react';
@@ -106,12 +106,22 @@ function LoginScreen({ onLogin, isLoggingIn, loginError }: LoginScreenProps) {
   );
 }
 
+function isStorefrontRoute() {
+  const searchParams = new URLSearchParams(window.location.search);
+  const hasStoreQuery = Boolean(searchParams.get('tienda') || searchParams.get('companyId') || searchParams.get('c'));
+  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  const hashParts = window.location.hash.replace('#', '').split('/').filter(Boolean);
+
+  return hasStoreQuery || pathParts[0] === 'tienda' || hashParts[0] === 'tienda';
+}
+
 export default function App() {
   const [products, setProducts] = React.useState<Product[]>([]);
   const [cartItems, setCartItems] = React.useState<CartItem[]>([]);
   const [companies, setCompanies] = React.useState<Company[]>([]);
   const [isCartOpen, setIsCartOpen] = React.useState(false);
   const [isMerchantMode, setIsMerchantMode] = React.useState(false);
+  const [isClientStoreRoute, setIsClientStoreRoute] = React.useState(isStorefrontRoute());
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
   const [activeCategory, setActiveCategory] = React.useState<string>('todos');
   const [searchTerm, setSearchTerm] = React.useState<string>('');
@@ -194,6 +204,7 @@ export default function App() {
 
   React.useEffect(() => {
     const handleUrlChange = () => {
+      setIsClientStoreRoute(isStorefrontRoute());
       if (companies.length > 0) {
         parseCompanyFromUrl(companies);
       }
@@ -222,6 +233,13 @@ export default function App() {
     } else {
       window.history.pushState({}, '', url.pathname + url.search);
     }
+  };
+
+  const openMerchantManager = () => {
+    setActiveCompany(null);
+    setIsClientStoreRoute(false);
+    setIsMerchantMode(true);
+    window.history.pushState({}, '', '/');
   };
 
   const activeSettings = React.useMemo<StoreSettings>(() => {
@@ -258,10 +276,15 @@ export default function App() {
   const isMerchant = isAdmin || !!userCompany;
 
   React.useEffect(() => {
+    if (isClientStoreRoute) {
+      setIsMerchantMode(false);
+      return;
+    }
+
     if (isMerchant) {
       setIsMerchantMode(true);
     }
-  }, [isMerchant]);
+  }, [isMerchant, isClientStoreRoute]);
 
   // Global mobile keyboard overlap / auto-scroll handler
   React.useEffect(() => {
@@ -331,7 +354,9 @@ export default function App() {
       setUser(currentUser);
       setIsAuthReady(true);
       setIsLoggingIn(false);
-      setLoginError('');
+      if (currentUser) {
+        setLoginError('');
+      }
       // Auto switch to merchant mode if admin or company owner logs in
       if (currentUser) {
         const isUserAdmin = adminEmails.includes(currentUser.email || '');
@@ -346,18 +371,6 @@ export default function App() {
       window.clearTimeout(authTimeout);
       unsubscribe();
     };
-  }, []);
-
-  React.useEffect(() => {
-    getRedirectResult(auth)
-      .then(() => {
-        setIsLoggingIn(false);
-      })
-      .catch((error) => {
-        console.error("Redirect Login Error", error);
-        setLoginError(getAuthErrorMessage(error));
-        setIsLoggingIn(false);
-      });
   }, []);
 
   // Real-time Companies Listener (with graceful offline fallback)
@@ -471,8 +484,14 @@ export default function App() {
   const login = async () => {
     setIsLoggingIn(true);
     setLoginError('');
+
     try {
-      await signInWithRedirect(auth, googleProvider);
+      googleProvider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, googleProvider);
+      setUser(result.user);
+      setIsAuthReady(true);
+      setIsLoggingIn(false);
+      setLoginError('');
     } catch (error) {
       console.error("Login Error", error);
       setLoginError(getAuthErrorMessage(error));
@@ -558,7 +577,7 @@ export default function App() {
     );
   }
 
-  if (isMerchant && isMerchantMode) {
+  if (isMerchant && isMerchantMode && !isClientStoreRoute) {
     return (
       <ErrorBoundary>
         <MerchantView 
@@ -589,7 +608,7 @@ export default function App() {
         <div className="fixed bottom-6 right-6 z-40 flex flex-col space-y-4">
           {isMerchant && (
             <button 
-              onClick={() => setIsMerchantMode(true)}
+              onClick={openMerchantManager}
               className="p-4 bg-stone-900 text-white rounded-full shadow-2xl hover:bg-primary transition-all hover:scale-110 flex items-center gap-2 group"
               title="Ir al Panel de Control"
             >

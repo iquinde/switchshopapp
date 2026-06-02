@@ -18,6 +18,14 @@ interface CartProps {
 export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemove, onClearCart, activeCompanyId }: CartProps) {
   const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
+  const belongsToTargetCompany = (customer: Customer, targetCompanyId?: string) => {
+    if (!targetCompanyId || targetCompanyId === 'comp-default') {
+      return !customer.companyId || customer.companyId === 'comp-default';
+    }
+
+    return customer.companyId === targetCompanyId;
+  };
+
   // States for checkout progress
   const [isCheckingOut, setIsCheckingOut] = React.useState(false);
   const [isSuccess, setIsSuccess] = React.useState(false);
@@ -69,7 +77,9 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
         const qCed = query(collection(db, 'customers'), where('cedula', '==', finalCustomerCedula));
         const snapCed = await getDocs(qCed);
         if (!snapCed.empty) {
-          existingCustomerDoc = snapCed.docs[0];
+          existingCustomerDoc = snapCed.docs.find(customerDoc => 
+            belongsToTargetCompany(customerDoc.data() as Customer, targetCompanyId)
+          ) || null;
         }
       }
 
@@ -78,7 +88,9 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
         const qPhone = query(collection(db, 'customers'), where('phone', '==', finalCustomerPhone));
         const snapPhone = await getDocs(qPhone);
         if (!snapPhone.empty) {
-          existingCustomerDoc = snapPhone.docs[0];
+          existingCustomerDoc = snapPhone.docs.find(customerDoc => 
+            belongsToTargetCompany(customerDoc.data() as Customer, targetCompanyId)
+          ) || null;
         }
       }
 

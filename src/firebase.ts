@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { browserLocalPersistence, browserPopupRedirectResolver, GoogleAuthProvider, initializeAuth } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 // @ts-ignore
@@ -12,10 +12,7 @@ if (!firebaseConfig || !firebaseConfig.projectId) {
 // Initialize Firebase SDK
 const app = initializeApp(firebaseConfig || {});
 export const db = getFirestore(app, (firebaseConfig && firebaseConfig.firestoreDatabaseId) || undefined);
-export const auth = initializeAuth(app, {
-  persistence: browserLocalPersistence,
-  popupRedirectResolver: browserPopupRedirectResolver,
-});
+export const auth = getAuth(app);
 
 // Lazy storage initialization to prevent top-level crashes
 let storageInstance: any;

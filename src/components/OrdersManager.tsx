@@ -31,8 +31,18 @@ export default function OrdersManager({
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [selectedOrder, setSelectedOrder] = React.useState<Order | null>(null);
 
+  const matchesActiveCompany = React.useCallback((record: { companyId?: string }) => {
+    if (!companyId || companyId === 'all') return true;
+    if (companyId === 'comp-default') return !record.companyId || record.companyId === 'comp-default';
+    return record.companyId === companyId;
+  }, [companyId]);
+
+  const companyCustomers = React.useMemo(() => {
+    return customers.filter(matchesActiveCompany);
+  }, [customers, matchesActiveCompany]);
+
   const activeAssociatedCustomer = selectedOrder 
-    ? customers.find(c => c.id === selectedOrder.customerId || (selectedOrder.customerPhone && c.phone === selectedOrder.customerPhone)) 
+    ? companyCustomers.find(c => c.id === selectedOrder.customerId || (selectedOrder.customerPhone && c.phone === selectedOrder.customerPhone)) 
     : null;
   const isCustomerPending = activeAssociatedCustomer?.status === 'pending';
   const customerNotFound = !!(selectedOrder && !activeAssociatedCustomer && selectedOrder.customerId && selectedOrder.customerId !== 'manual-client');
@@ -119,11 +129,7 @@ export default function OrdersManager({
   }, [isOfflineMode]);
 
   // Filter orders by active company context first
-  const companyOrders = orders.filter(order => {
-    if (!companyId || companyId === 'all') return true;
-    if (companyId === 'comp-default') return !order.companyId || order.companyId === 'comp-default';
-    return order.companyId === companyId;
-  });
+  const companyOrders = orders.filter(matchesActiveCompany);
 
   // Filter orders
   const filteredOrders = companyOrders.filter(order => {
@@ -553,6 +559,7 @@ export default function OrdersManager({
     }
 
     setIsSubmittingOrder(true);
+    const targetCompanyId = companyId === 'all' ? 'comp-default' : companyId;
 
     if (getOfflineFallbackActive()) {
       try {
@@ -569,12 +576,14 @@ export default function OrdersManager({
             phone: newCustomerPhone,
             totalSpent: total,
             currentDebt: orderPaymentMethod === 'credit' ? (total - (parseFloat(orderPaidAmount) || 0)) : 0,
+            status: 'active',
+            companyId: targetCompanyId,
           });
           finalCustomerId = newCust.id;
           finalCustomerName = newCust.name;
           finalCustomerPhone = newCust.phone || '';
         } else if (selectedCustomer) {
-          const custObj = customers.find(c => c.id === selectedCustomer);
+          const custObj = companyCustomers.find(c => c.id === selectedCustomer);
           if (custObj) {
             finalCustomerName = custObj.name;
             finalCustomerPhone = custObj.phone || '';
@@ -610,6 +619,7 @@ export default function OrdersManager({
           customerId: finalCustomerId || undefined,
           customerName: finalCustomerName,
           customerPhone: finalCustomerPhone || undefined,
+          companyId: targetCompanyId,
         });
 
         // Deduct stock
@@ -629,7 +639,8 @@ export default function OrdersManager({
             customerName: finalCustomerName,
             amount: paidAmount,
             paymentMethod: orderPaymentMethod === 'credit' ? 'cash' : (orderPaymentMethod as any),
-            notes: 'Pago inicial del pedido'
+            notes: 'Pago inicial del pedido',
+            companyId: targetCompanyId,
           });
         }
 
@@ -673,10 +684,12 @@ export default function OrdersManager({
           phone: newCustomerPhone,
           totalSpent: total,
           currentDebt: orderPaymentMethod === 'credit' ? (total - (parseFloat(orderPaidAmount) || 0)) : 0,
+          status: 'active',
+          companyId: targetCompanyId,
           createdAt: serverTimestamp()
         });
       } else if (selectedCustomer) {
-        const custObj = customers.find(c => c.id === selectedCustomer);
+        const custObj = companyCustomers.find(c => c.id === selectedCustomer);
         if (custObj) {
           finalCustomerName = custObj.name;
           finalCustomerPhone = custObj.phone || '';
@@ -717,6 +730,7 @@ export default function OrdersManager({
         customerId: finalCustomerId || undefined,
         customerName: finalCustomerName,
         customerPhone: finalCustomerPhone || undefined,
+        companyId: targetCompanyId,
         createdAt: serverTimestamp()
       };
 
@@ -741,7 +755,8 @@ export default function OrdersManager({
           amount: paidAmount,
           paymentMethod: orderPaymentMethod === 'credit' ? 'cash' : (orderPaymentMethod as any),
           date: serverTimestamp(),
-          notes: 'Pago inicial del pedido'
+          notes: 'Pago inicial del pedido',
+          companyId: targetCompanyId,
         };
         batch.set(transRef, transData);
       }
@@ -774,12 +789,14 @@ export default function OrdersManager({
             phone: newCustomerPhone,
             totalSpent: total,
             currentDebt: orderPaymentMethod === 'credit' ? (total - (parseFloat(orderPaidAmount) || 0)) : 0,
+            status: 'active',
+            companyId: targetCompanyId,
           });
           finalCustomerId = newCust.id;
           finalCustomerName = newCust.name;
           finalCustomerPhone = newCust.phone || '';
         } else if (selectedCustomer) {
-          const custObj = customers.find(c => c.id === selectedCustomer);
+          const custObj = companyCustomers.find(c => c.id === selectedCustomer);
           if (custObj) {
             finalCustomerName = custObj.name;
             finalCustomerPhone = custObj.phone || '';
@@ -813,6 +830,7 @@ export default function OrdersManager({
           customerId: finalCustomerId || undefined,
           customerName: finalCustomerName,
           customerPhone: finalCustomerPhone || undefined,
+          companyId: targetCompanyId,
         });
 
         orderItems.forEach(item => {
@@ -830,7 +848,8 @@ export default function OrdersManager({
             customerName: finalCustomerName,
             amount: paidAmount,
             paymentMethod: orderPaymentMethod === 'credit' ? 'cash' : (orderPaymentMethod as any),
-            notes: 'Pago inicial del pedido'
+            notes: 'Pago inicial del pedido',
+            companyId: targetCompanyId,
           });
         }
 
@@ -1414,7 +1433,7 @@ export default function OrdersManager({
                       >
                         <option value="">Cliente Casual (Sin guardar)</option>
                         <option value="new">+ Crear un Nuevo Cliente</option>
-                        {customers.map(c => (
+                        {companyCustomers.map(c => (
                           <option key={c.id} value={c.id}>{c.name} {c.phone ? `(${c.phone})` : ''}</option>
                         ))}
                       </select>
