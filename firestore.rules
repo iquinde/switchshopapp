@@ -213,7 +213,7 @@ service cloud.firestore {
     }
 
     match /purchases/{purchaseId} {
-      allow read: if true;
+      allow read: if isAdmin() || isCompanyMember(resource.data.companyId);
       allow create, update: if (isAdmin() || isCompanyMember(request.resource.data.companyId)) && isValidPurchase(request.resource.data);
       allow delete: if isAdmin() || isCompanyMember(resource.data.companyId);
     }
