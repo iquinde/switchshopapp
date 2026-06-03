@@ -282,8 +282,13 @@ export default function App() {
   }, [products, activeCompany]);
 
   const adminEmails = ['israel.quinde@gmail.com'];
+  const canAccessCompany = React.useCallback((company: Company, email?: string | null) => {
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    if (!normalizedEmail || company.status !== 'active') return false;
+    return company.ownerEmail === normalizedEmail || (company.collaboratorEmails || []).includes(normalizedEmail);
+  }, []);
   const isAdmin = user && adminEmails.includes(user.email);
-  const userCompany = user ? companies.find(c => c.ownerEmail === user.email && c.status === 'active') : null;
+  const userCompany = user ? companies.find(c => canAccessCompany(c, user.email)) : null;
   const isMerchant = isAdmin || !!userCompany;
 
   React.useEffect(() => {
@@ -372,7 +377,7 @@ export default function App() {
       if (currentUser) {
         const isUserAdmin = adminEmails.includes(currentUser.email || '');
         const comps = offlineDb.getCompanies();
-        const isOwner = comps.some(c => c.ownerEmail === currentUser.email && c.status === 'active');
+        const isOwner = comps.some(c => canAccessCompany(c, currentUser.email));
         if (isUserAdmin || isOwner) {
           setIsMerchantMode(true);
         }
@@ -382,7 +387,7 @@ export default function App() {
       window.clearTimeout(authTimeout);
       unsubscribe();
     };
-  }, []);
+  }, [canAccessCompany]);
 
   // Real-time Companies Listener (with graceful offline fallback)
   React.useEffect(() => {

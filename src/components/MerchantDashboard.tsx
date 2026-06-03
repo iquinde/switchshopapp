@@ -7,11 +7,11 @@ import {
   getOfflineFallbackActive, 
   OFFLINE_CHANGE_EVENT 
 } from '../lib/offlineDb';
-import { Product, Customer, Order } from '../types';
+import { Product, Customer, Order, Purchase } from '../types';
 import { 
   TrendingUp, 
   ShoppingBag, 
-  Package, 
+  PackagePlus, 
   Users, 
   ArrowUpRight, 
   ArrowDownRight,
@@ -59,6 +59,8 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
   const [products, setProducts] = React.useState<Product[]>([]);
   const [orders, setOrders] = React.useState<Order[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
+  const [purchases, setPurchases] = React.useState<Purchase[]>([]);
+  const [selectedYear, setSelectedYear] = React.useState(new Date().getFullYear());
   const [isOffline, setIsOffline] = React.useState<boolean>(getOfflineFallbackActive());
   const [alertPercentage, setAlertPercentage] = React.useState<number>(20);
 
@@ -81,6 +83,7 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
     let unsubProducts: (() => void) | null = null;
     let unsubOrders: (() => void) | null = null;
     let unsubCustomers: (() => void) | null = null;
+    let unsubPurchases: (() => void) | null = null;
 
     const loadRealtimeData = () => {
       const mode = getOfflineFallbackActive();
@@ -91,6 +94,7 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
         setProducts(offlineDb.getProducts());
         setOrders(offlineDb.getOrders());
         setCustomers(offlineDb.getCustomers());
+        setPurchases(offlineDb.getPurchases());
       } else {
         // Fetch from Firebase with fallback compatibility
         try {
@@ -124,12 +128,24 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
               setCustomers(offlineDb.getCustomers());
             }
           });
+
+          unsubPurchases = onSnapshot(collection(db, 'purchases'), (snapshot) => {
+            if (!active) return;
+            const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Purchase));
+            setPurchases(items);
+          }, (err) => {
+            console.warn("Purchases listener failed in dashboard", err);
+            if (active) {
+              setPurchases([]);
+            }
+          });
         } catch (e) {
           console.error("Firestore initialization failed. Using offline db.", e);
           if (active) {
             setProducts(offlineDb.getProducts());
             setOrders(offlineDb.getOrders());
             setCustomers(offlineDb.getCustomers());
+            setPurchases(offlineDb.getPurchases());
           }
         }
       }
@@ -149,7 +165,18 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
       if (unsubProducts) unsubProducts();
       if (unsubOrders) unsubOrders();
       if (unsubCustomers) unsubCustomers();
+      if (unsubPurchases) unsubPurchases();
     };
+  }, []);
+
+  const getRecordDate = React.useCallback((value: any): Date | null => {
+    if (!value) return null;
+    const date = typeof value === 'string'
+      ? new Date(value)
+      : value?.seconds
+        ? new Date(value.seconds * 1000)
+        : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
   }, []);
 
   // Pre-filter data streams based on corporate company context
@@ -177,8 +204,43 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
     });
   }, [customers, companyId]);
 
+  const companyPurchases = React.useMemo(() => {
+    return purchases.filter(p => {
+      if (!companyId || companyId === 'all') return true;
+      if (companyId === 'comp-default') return !p.companyId || p.companyId === 'comp-default';
+      return p.companyId === companyId;
+    });
+  }, [purchases, companyId]);
+
+  const availableYears = React.useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear()]);
+    companyOrders.forEach(order => {
+      const date = getRecordDate(order.createdAt);
+      if (date) years.add(date.getFullYear());
+    });
+    companyPurchases.forEach(purchase => {
+      const date = getRecordDate(purchase.date || purchase.createdAt);
+      if (date) years.add(date.getFullYear());
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [companyOrders, companyPurchases, getRecordDate]);
+
   // Compute stats metrics dynamically
-  const activeOrders = React.useMemo(() => companyOrders.filter(o => o.status !== 'cancelled'), [companyOrders]);
+  const yearOrders = React.useMemo(() => {
+    return companyOrders.filter(order => {
+      const date = getRecordDate(order.createdAt);
+      return date && date.getFullYear() === selectedYear;
+    });
+  }, [companyOrders, getRecordDate, selectedYear]);
+
+  const yearPurchases = React.useMemo(() => {
+    return companyPurchases.filter(purchase => {
+      const date = getRecordDate(purchase.date || purchase.createdAt);
+      return date && date.getFullYear() === selectedYear;
+    });
+  }, [companyPurchases, getRecordDate, selectedYear]);
+
+  const activeOrders = React.useMemo(() => yearOrders.filter(o => o.status !== 'cancelled'), [yearOrders]);
   
   const totalSales = React.useMemo(() => {
     return activeOrders.reduce((sum, o) => sum + (o.total || 0), 0);
@@ -189,8 +251,10 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
     return activeOrders.reduce((sum, o) => sum + (o.amountPaid || 0), 0);
   }, [activeOrders]);
 
-  const totalOrdersCount = React.useMemo(() => companyOrders.length, [companyOrders]);
-  const totalProductsCount = React.useMemo(() => companyProducts.length, [companyProducts]);
+  const totalOrdersCount = React.useMemo(() => yearOrders.length, [yearOrders]);
+  const totalPurchases = React.useMemo(() => {
+    return yearPurchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
+  }, [yearPurchases]);
   const totalCustomersCount = React.useMemo(() => companyCustomers.length, [companyCustomers]);
 
   // Aggregate daily stats for the weekly performance chart
@@ -261,9 +325,18 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
       <div className="flex justify-between items-end px-1 sm:px-0">
         <div>
           <h2 className="text-xl sm:text-3xl font-serif font-bold text-stone-900 leading-tight">Hola, {capitalizedName}</h2>
-          <p className="text-stone-500 text-xs sm:text-sm mt-0.5">Aquí tienes un resumen de tu negocio en tiempo real.</p>
+          <p className="text-stone-500 text-xs sm:text-sm mt-0.5">Aquí tienes un resumen de tu negocio por año.</p>
         </div>
-        <div className="text-right">
+        <div className="flex flex-col items-end gap-2 text-right">
+          <select
+            value={selectedYear}
+            onChange={e => setSelectedYear(Number(e.target.value))}
+            className="bg-white border border-stone-200 text-stone-800 hover:border-stone-400 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-stone-900 transition-all cursor-pointer"
+          >
+            {availableYears.map(year => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
           <p className="text-[9px] sm:text-xs uppercase tracking-widest text-stone-400 font-bold mb-0.5 sm:mb-1 flex items-center justify-end gap-1">
             <span>Cierre Recibido</span>
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
@@ -291,9 +364,9 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
           color="bg-primary" 
         />
         <StatsCard 
-          title="Productos" 
-          value={totalProductsCount.toString()} 
-          icon={Package} 
+          title="Compras" 
+          value={`$${totalPurchases.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} 
+          icon={PackagePlus} 
           color="bg-stone-800" 
         />
         <StatsCard 

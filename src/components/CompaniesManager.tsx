@@ -1,9 +1,9 @@
 import React from 'react';
 import { 
   Building, User, Mail, Search, Plus, Trash2, Edit2, X, Check, Save, 
-  Phone, AlertTriangle, Copy
+  Phone, Copy, UserPlus
 } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { 
   collection, query, onSnapshot, doc, updateDoc, 
   addDoc, deleteDoc, serverTimestamp, setDoc
@@ -16,6 +16,43 @@ interface CompaniesManagerProps {
   companies: Company[];
 }
 
+const PHONE_AREA_CODES = [
+  { label: 'Ecuador', code: '+593' },
+  { label: 'Colombia', code: '+57' },
+  { label: 'Peru', code: '+51' },
+  { label: 'Mexico', code: '+52' },
+  { label: 'Estados Unidos', code: '+1' },
+  { label: 'Espana', code: '+34' },
+];
+
+const splitPhoneValue = (value?: string | null) => {
+  const cleaned = (value || '').trim();
+  const match = PHONE_AREA_CODES.find(area => cleaned.startsWith(area.code));
+
+  if (!match) {
+    return { areaCode: '+593', number: cleaned.replace(/\D/g, '') };
+  }
+
+  return {
+    areaCode: match.code,
+    number: cleaned.slice(match.code.length).replace(/\D/g, ''),
+  };
+};
+
+const buildPhoneValue = (areaCode: string, number: string) => {
+  const cleanNumber = number.replace(/\D/g, '');
+  return cleanNumber ? `${areaCode}${cleanNumber}` : null;
+};
+
+const parseEmailList = (value: string) => {
+  return Array.from(new Set(
+    value
+      .split(/[\n,; ]+/)
+      .map(email => email.trim().toLowerCase())
+      .filter(Boolean)
+  ));
+};
+
 export default function CompaniesManager({ companies }: CompaniesManagerProps) {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
@@ -26,9 +63,12 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
   const [name, setName] = React.useState('');
   const [storeName, setStoreName] = React.useState('');
   const [ownerEmail, setOwnerEmail] = React.useState('');
+  const [collaboratorEmailsText, setCollaboratorEmailsText] = React.useState('');
   const [description, setDescription] = React.useState('');
-  const [phone, setPhone] = React.useState('');
-  const [whatsapp, setWhatsapp] = React.useState('');
+  const [phoneAreaCode, setPhoneAreaCode] = React.useState('+593');
+  const [phoneNumber, setPhoneNumber] = React.useState('');
+  const [whatsappAreaCode, setWhatsappAreaCode] = React.useState('+593');
+  const [whatsappNumber, setWhatsappNumber] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [status, setStatus] = React.useState<'active' | 'inactive'>('active');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -37,9 +77,12 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
     setName('');
     setStoreName('');
     setOwnerEmail('');
+    setCollaboratorEmailsText('');
     setDescription('');
-    setPhone('');
-    setWhatsapp('');
+    setPhoneAreaCode('+593');
+    setPhoneNumber('');
+    setWhatsappAreaCode('+593');
+    setWhatsappNumber('');
     setEmail('');
     setStatus('active');
     setCurrentCompany(null);
@@ -56,9 +99,14 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
     setName(comp.name);
     setStoreName(comp.storeName);
     setOwnerEmail(comp.ownerEmail);
+    setCollaboratorEmailsText((comp.collaboratorEmails || []).join('\n'));
     setDescription(comp.description || '');
-    setPhone(comp.phone || '');
-    setWhatsapp(comp.whatsapp || '');
+    const parsedPhone = splitPhoneValue(comp.phone);
+    const parsedWhatsapp = splitPhoneValue(comp.whatsapp);
+    setPhoneAreaCode(parsedPhone.areaCode);
+    setPhoneNumber(parsedPhone.number);
+    setWhatsappAreaCode(parsedWhatsapp.areaCode);
+    setWhatsappNumber(parsedWhatsapp.number);
     setEmail(comp.email || '');
     setStatus(comp.status);
     setIsEditing(true);
@@ -73,13 +121,18 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
 
     setIsSubmitting(true);
 
+    const normalizedOwnerEmail = ownerEmail.trim().toLowerCase();
+    const collaboratorEmails = parseEmailList(collaboratorEmailsText)
+      .filter(email => email !== normalizedOwnerEmail);
+
     const companyPayload = {
       name: name.trim(),
       storeName: storeName.trim(),
-      ownerEmail: ownerEmail.trim().toLowerCase(),
+      ownerEmail: normalizedOwnerEmail,
+      collaboratorEmails,
       description: description.trim() || null,
-      phone: phone.trim() || null,
-      whatsapp: whatsapp.trim() || null,
+      phone: buildPhoneValue(phoneAreaCode, phoneNumber),
+      whatsapp: buildPhoneValue(whatsappAreaCode, whatsappNumber),
       email: email.trim() || null,
       status: status,
       createdAt: currentCompany?.createdAt || new Date().toISOString()
@@ -108,11 +161,16 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
     if (!confirm(`¿Estás seguro de eliminar permanentemente el acceso y perfil de "${store}"?`)) return;
     
     try {
+      await auth.currentUser?.getIdToken(true);
       await deleteDoc(doc(db, 'companies', id));
       alert('Empresa eliminada');
     } catch (error: any) {
       console.error("Error al eliminar empresa de Firebase:", error);
-      alert('Error al eliminar de Firebase: ' + (error?.message || String(error)));
+      const currentUser = auth.currentUser;
+      const sessionInfo = currentUser
+        ? `\nSesion actual: ${currentUser.email || 'sin email'} | email verificado: ${currentUser.emailVerified ? 'si' : 'no'}`
+        : '\nSesion actual: no autenticada';
+      alert('Error al eliminar de Firebase: ' + (error?.message || String(error)) + sessionInfo);
     }
   };
 
@@ -124,7 +182,8 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
     }
     return c.storeName.toLowerCase().includes(searchTerm.toLowerCase()) || 
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      c.ownerEmail.toLowerCase().includes(searchTerm.toLowerCase());
+      c.ownerEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.collaboratorEmails || []).some(email => email.toLowerCase().includes(searchTerm.toLowerCase()));
   });
 
   return (
@@ -182,6 +241,14 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
                   <Mail size={14} className="text-stone-400" />
                   <span className="font-mono">{comp.ownerEmail}</span>
                 </div>
+                {(comp.collaboratorEmails || []).length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <UserPlus size={14} className="text-stone-400 mt-0.5" />
+                    <span className="font-mono leading-relaxed">
+                      {(comp.collaboratorEmails || []).join(', ')}
+                    </span>
+                  </div>
+                )}
                 {(comp.phone || comp.whatsapp) && (
                   <div className="flex items-center gap-2">
                     <Phone size={14} className="text-stone-400" />
@@ -333,6 +400,22 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
 
               <div>
                 <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
+                  Usuarios autorizados adicionales
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="otro.usuario@gmail.com"
+                  value={collaboratorEmailsText}
+                  onChange={(e) => setCollaboratorEmailsText(e.target.value)}
+                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
+                />
+                <span className="text-[10px] text-stone-400 mt-1 block leading-relaxed">
+                  Separa varios correos con coma, espacio o una linea nueva. Cada correo podra entrar con Google y gestionar esta misma empresa.
+                </span>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
                   Descripción Corta
                 </label>
                 <textarea 
@@ -350,25 +433,49 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
                   <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
                     Teléfono
                   </label>
-                  <input 
-                    type="text" 
-                    placeholder="+593 9999999"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
-                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={phoneAreaCode}
+                      onChange={(e) => setPhoneAreaCode(e.target.value)}
+                      className="w-24 px-2 py-2 border border-stone-200 bg-white rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-bold"
+                    >
+                      {PHONE_AREA_CODES.map(area => (
+                        <option key={area.code} value={area.code}>{area.code}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      placeholder="999999999"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
                     WhatsApp (Solo Números)
                   </label>
-                  <input 
-                    type="text" 
-                    placeholder="593999999"
-                    value={whatsapp}
-                    onChange={(e) => setWhatsapp(e.target.value)}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
-                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={whatsappAreaCode}
+                      onChange={(e) => setWhatsappAreaCode(e.target.value)}
+                      className="w-24 px-2 py-2 border border-stone-200 bg-white rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-bold"
+                    >
+                      {PHONE_AREA_CODES.map(area => (
+                        <option key={area.code} value={area.code}>{area.code}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      placeholder="999999999"
+                      value={whatsappNumber}
+                      onChange={(e) => setWhatsappNumber(e.target.value.replace(/\D/g, ''))}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
+                    />
+                  </div>
                 </div>
               </div>
 

@@ -62,12 +62,40 @@ export default function OrdersManager({
   // Manual order creation
   const [isCreatingOrder, setIsCreatingOrder] = React.useState(false);
   const [selectedCustomer, setSelectedCustomer] = React.useState<string>('');
+  const [customerSearch, setCustomerSearch] = React.useState('');
+  const [isCustomerPickerOpen, setIsCustomerPickerOpen] = React.useState(false);
   const [newCustomerName, setNewCustomerName] = React.useState('');
   const [newCustomerPhone, setNewCustomerPhone] = React.useState('');
+  const [orderDate, setOrderDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [orderItems, setOrderItems] = React.useState<{ product: Product; quantity: number }[]>([]);
   const [orderPaymentMethod, setOrderPaymentMethod] = React.useState<'cash' | 'card' | 'transfer' | 'credit'>('cash');
   const [orderPaidAmount, setOrderPaidAmount] = React.useState('');
   const [isSubmittingOrder, setIsSubmittingOrder] = React.useState(false);
+
+  const filteredCustomerOptions = React.useMemo(() => {
+    const term = customerSearch.trim().toLowerCase();
+    return companyCustomers
+      .filter(customer => {
+        if (!term || term === 'cliente casual' || term === 'crear nuevo cliente') return true;
+        return customer.name.toLowerCase().includes(term) ||
+          (customer.phone || '').toLowerCase().includes(term) ||
+          (customer.cedula || '').toLowerCase().includes(term) ||
+          (customer.email || '').toLowerCase().includes(term);
+      })
+      .slice(0, 8);
+  }, [companyCustomers, customerSearch]);
+
+  const selectedCustomerData = React.useMemo(() => {
+    return companyCustomers.find(customer => customer.id === selectedCustomer);
+  }, [companyCustomers, selectedCustomer]);
+
+  const openCreateOrder = () => {
+    setOrderDate(new Date().toISOString().slice(0, 10));
+    setCustomerSearch('');
+    setSelectedCustomer('');
+    setIsCustomerPickerOpen(false);
+    setIsCreatingOrder(true);
+  };
 
   const [isOfflineMode, setIsOfflineMode] = React.useState(getOfflineFallbackActive());
 
@@ -560,6 +588,7 @@ export default function OrdersManager({
 
     setIsSubmittingOrder(true);
     const targetCompanyId = companyId === 'all' ? 'comp-default' : companyId;
+    const orderCreatedAt = new Date(`${orderDate}T12:00:00`).toISOString();
 
     if (getOfflineFallbackActive()) {
       try {
@@ -620,6 +649,7 @@ export default function OrdersManager({
           customerName: finalCustomerName,
           customerPhone: finalCustomerPhone || undefined,
           companyId: targetCompanyId,
+          createdAt: orderCreatedAt,
         });
 
         // Deduct stock
@@ -645,6 +675,8 @@ export default function OrdersManager({
         }
 
         setSelectedCustomer('');
+        setCustomerSearch('');
+        setOrderDate(new Date().toISOString().slice(0, 10));
         setNewCustomerName('');
         setNewCustomerPhone('');
         setOrderItems([]);
@@ -731,7 +763,7 @@ export default function OrdersManager({
         customerName: finalCustomerName,
         customerPhone: finalCustomerPhone || undefined,
         companyId: targetCompanyId,
-        createdAt: serverTimestamp()
+        createdAt: orderCreatedAt
       };
 
       batch.set(orderRef, orderData);
@@ -767,6 +799,8 @@ export default function OrdersManager({
       setIsCreatingOrder(false);
       setOrderItems([]);
       setSelectedCustomer('');
+      setCustomerSearch('');
+      setOrderDate(new Date().toISOString().slice(0, 10));
       setNewCustomerName('');
       setNewCustomerPhone('');
       setOrderPaidAmount('');
@@ -831,6 +865,7 @@ export default function OrdersManager({
           customerName: finalCustomerName,
           customerPhone: finalCustomerPhone || undefined,
           companyId: targetCompanyId,
+          createdAt: orderCreatedAt,
         });
 
         orderItems.forEach(item => {
@@ -856,6 +891,8 @@ export default function OrdersManager({
         setIsCreatingOrder(false);
         setOrderItems([]);
         setSelectedCustomer('');
+        setCustomerSearch('');
+        setOrderDate(new Date().toISOString().slice(0, 10));
         setNewCustomerName('');
         setNewCustomerPhone('');
         setOrderPaidAmount('');
@@ -896,7 +933,7 @@ export default function OrdersManager({
           <p className="text-stone-500 text-xs sm:text-sm">Registra o consulta pedidos, su envío y pagos.</p>
         </div>
         <button 
-          onClick={() => setIsCreatingOrder(true)}
+          onClick={openCreateOrder}
           className="flex items-center space-x-2 bg-stone-900 text-white px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl text-sm font-bold shadow-sm active:scale-95 transition-all w-full sm:w-auto justify-center"
         >
           <Check size={18} />
@@ -1412,7 +1449,10 @@ export default function OrdersManager({
                 </div>
                 <button 
                   type="button" 
-                  onClick={() => setIsCreatingOrder(false)}
+                  onClick={() => {
+                    setIsCustomerPickerOpen(false);
+                    setIsCreatingOrder(false);
+                  }}
                   className="p-2 hover:bg-stone-50 rounded-full transition-colors"
                 >
                   <X size={18} />
@@ -1424,19 +1464,93 @@ export default function OrdersManager({
                 <div className="space-y-3">
                   <h4 className="text-[10px] font-bold text-stone-400 tracking-wider uppercase">1. Información del Cliente</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1 relative">
+                      <label className="text-[10px] text-stone-400 font-bold uppercase block">Buscar Cliente</label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
+                        <input
+                          type="text"
+                          value={customerSearch}
+                          onFocus={() => setIsCustomerPickerOpen(true)}
+                          onChange={e => {
+                            setCustomerSearch(e.target.value);
+                            setSelectedCustomer('');
+                            setIsCustomerPickerOpen(true);
+                          }}
+                          placeholder="Nombre, teléfono o cédula..."
+                          className="w-full pl-8 pr-3 py-2 border border-stone-100 rounded-xl bg-stone-50 text-xs font-semibold text-stone-700 outline-none focus:bg-white focus:ring-2 focus:ring-primary/20"
+                        />
+                      </div>
+                      {selectedCustomerData && (
+                        <p className="text-[10px] text-primary font-bold">
+                          Cliente seleccionado: {selectedCustomerData.name}
+                        </p>
+                      )}
+                      {isCustomerPickerOpen && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-stone-100 rounded-xl shadow-xl z-[140] overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedCustomer('');
+                              setCustomerSearch('Cliente Casual');
+                              setIsCustomerPickerOpen(false);
+                            }}
+                            className="w-full px-3 py-2 text-left text-xs font-semibold text-stone-600 hover:bg-stone-50 border-b border-stone-50"
+                          >
+                            Cliente Casual (Sin guardar)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedCustomer('new');
+                              if (customerSearch && customerSearch !== 'Cliente Casual') {
+                                setNewCustomerName(customerSearch);
+                              }
+                              setCustomerSearch('Crear nuevo cliente');
+                              setIsCustomerPickerOpen(false);
+                            }}
+                            className="w-full px-3 py-2 text-left text-xs font-bold text-primary hover:bg-primary/5 border-b border-stone-50"
+                          >
+                            + Crear un Nuevo Cliente
+                          </button>
+                          {filteredCustomerOptions.map(customer => (
+                            <button
+                              key={customer.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedCustomer(customer.id);
+                                setCustomerSearch(`${customer.name}${customer.phone ? ` (${customer.phone})` : ''}`);
+                                setIsCustomerPickerOpen(false);
+                              }}
+                              className="w-full px-3 py-2 text-left hover:bg-stone-50"
+                            >
+                              <span className="block text-xs font-bold text-stone-800">{customer.name}</span>
+                              <span className="block text-[10px] text-stone-400">
+                                {customer.phone || 'Sin teléfono'}{customer.cedula ? ` · ${customer.cedula}` : ''}
+                              </span>
+                            </button>
+                          ))}
+                          {filteredCustomerOptions.length === 0 && (
+                            <div className="px-3 py-3 text-xs text-stone-400 text-center">
+                              No hay clientes que coincidan.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     <div className="space-y-1">
-                      <label className="text-[10px] text-stone-400 font-bold uppercase block">Asociar Cliente</label>
-                      <select
-                        value={selectedCustomer}
-                        onChange={e => setSelectedCustomer(e.target.value)}
-                        className="w-full px-3 py-2 border border-stone-100 rounded-xl bg-stone-50 text-xs font-semibold text-stone-700 outline-none"
-                      >
-                        <option value="">Cliente Casual (Sin guardar)</option>
-                        <option value="new">+ Crear un Nuevo Cliente</option>
-                        {companyCustomers.map(c => (
-                          <option key={c.id} value={c.id}>{c.name} {c.phone ? `(${c.phone})` : ''}</option>
-                        ))}
-                      </select>
+                      <label className="text-[10px] text-stone-400 font-bold uppercase block">Fecha del Pedido</label>
+                      <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
+                        <input
+                          type="date"
+                          required
+                          value={orderDate}
+                          onChange={e => setOrderDate(e.target.value)}
+                          className="w-full pl-8 pr-3 py-2 border border-stone-100 rounded-xl bg-stone-50 text-xs font-semibold text-stone-700 outline-none focus:bg-white focus:ring-2 focus:ring-primary/20"
+                        />
+                      </div>
                     </div>
 
                     {selectedCustomer === 'new' && (
@@ -1580,7 +1694,10 @@ export default function OrdersManager({
               <div className="p-6 border-t border-stone-100 bg-stone-50 flex gap-3 flex-shrink-0">
                 <button
                   type="button"
-                  onClick={() => setIsCreatingOrder(false)}
+                  onClick={() => {
+                    setIsCustomerPickerOpen(false);
+                    setIsCreatingOrder(false);
+                  }}
                   className="flex-1 py-3 border border-stone-200 text-stone-500 rounded-xl font-bold transition-colors text-xs"
                 >
                   Descartar

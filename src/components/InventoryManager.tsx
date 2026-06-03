@@ -11,6 +11,24 @@ interface InventoryManagerProps {
   companyId?: string; // Active companyId ('comp-default', 'comp-1', 'comp-2', etc.)
 }
 
+const getProductCompanyId = (product: Product) => product.companyId || 'comp-default';
+
+const getTargetCompanyId = (companyId?: string) => {
+  return companyId === 'all' ? 'comp-default' : (companyId || 'comp-default');
+};
+
+const getNextSku = (products: Product[], companyId?: string) => {
+  const targetCompanyId = getTargetCompanyId(companyId);
+  const nextNumber = products
+    .filter(product => getProductCompanyId(product) === targetCompanyId)
+    .reduce((max, product) => {
+      const match = (product.sku || '').trim().match(/^PRO-(\d+)$/i);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0) + 1;
+
+  return `PRO-${String(nextNumber).padStart(3, '0')}`;
+};
+
 export default function InventoryManager({ products, companyId = 'comp-default' }: InventoryManagerProps) {
   const [isAdding, setIsAdding] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
@@ -65,6 +83,25 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
     setExistingImages([]);
     setEditingId(null);
     setIsAdding(false);
+  };
+
+  const handleOpenAdd = () => {
+    setFormData({
+      name: '',
+      description: '',
+      price: '',
+      costPrice: '',
+      stock: '0',
+      minStock: '10',
+      category: '',
+      sku: getNextSku(products, companyId),
+      status: 'active'
+    });
+    setSelectedFiles([]);
+    setPreviewUrls([]);
+    setExistingImages([]);
+    setEditingId(null);
+    setIsAdding(true);
   };
 
   const handleEdit = (product: Product) => {
@@ -123,8 +160,9 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
     
     // Choose which company this product goes to (defaults to active companyId, or previous value)
     const finalCompanyId = editingId 
-      ? (products.find(p => p.id === editingId)?.companyId || (companyId === 'all' ? 'comp-default' : companyId))
-      : (companyId === 'all' ? 'comp-default' : companyId);
+      ? (products.find(p => p.id === editingId)?.companyId || getTargetCompanyId(companyId))
+      : getTargetCompanyId(companyId);
+    const finalSku = formData.sku.trim() || getNextSku(products, finalCompanyId);
 
     const localProductData = {
       id: editingId || undefined,
@@ -135,7 +173,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
       stock: parseInt(formData.stock) || 0,
       minStock: parseInt(formData.minStock) || 0,
       category: formData.category,
-      sku: formData.sku || undefined,
+      sku: finalSku,
       status: formData.status,
       image: fallbackImage,
       images: previewUrls.length > 0 ? previewUrls : [fallbackImage],
@@ -197,7 +235,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
         stock: parseInt(formData.stock) || 0,
         minStock: parseInt(formData.minStock) || 0,
         category: formData.category,
-        sku: formData.sku,
+        sku: finalSku,
         status: formData.status,
         image: uploadedUrls[0] || fallbackImage,
         images: uploadedUrls.length > 0 ? uploadedUrls : [fallbackImage],
@@ -272,7 +310,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
           <p className="text-stone-500 text-xs sm:text-sm">Administra tus niveles de stock.</p>
         </div>
         <button 
-          onClick={() => setIsAdding(true)}
+          onClick={handleOpenAdd}
           className="flex items-center space-x-2 bg-primary text-white px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl text-sm sm:text-base font-bold shadow-sm active:scale-95 transition-all w-full sm:w-auto justify-center"
         >
           <Plus size={18} />
@@ -492,7 +530,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                     <input 
                       value={formData.sku} 
                       onChange={e => setFormData({...formData, sku: e.target.value})}
-                      placeholder="PROD-001"
+                      placeholder="PRO-001"
                       className="w-full px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs sm:text-sm outline-none"
                     />
                   </div>

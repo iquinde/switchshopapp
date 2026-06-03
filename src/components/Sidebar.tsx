@@ -2,6 +2,7 @@ import React from 'react';
 import { 
   LayoutDashboard, 
   Package, 
+  PackagePlus,
   History, 
   Users, 
   Settings, 
@@ -37,6 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const menuItems = [
     { id: 'dashboard', label: 'Inicio', icon: LayoutDashboard },
     { id: 'inventory', label: 'Inventario', icon: Package },
+    { id: 'purchases', label: 'Compras', icon: PackagePlus },
     { id: 'orders', label: 'Pedidos', icon: History },
     { id: 'receivables', label: 'Cartera', icon: Receipt },
     { id: 'customers', label: 'Clientes', icon: Users },
