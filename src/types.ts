@@ -70,6 +70,30 @@ export interface PaymentTransaction {
   companyId?: string; // Links transaction to a specific company
 }
 
+export interface PurchaseItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+  cost: number;
+  total: number;
+}
+
+export interface Purchase {
+  id: string;
+  lot: string;
+  date: any;
+  items: PurchaseItem[];
+  total: number;
+  supplier?: string;
+  notes?: string;
+  createdAt?: any;
+  companyId?: string;
+  productId?: string;
+  productName?: string;
+  quantity?: number;
+  cost?: number;
+}
+
 export interface StoreSettings {
   storeName: string;
   heroTitle: string;
@@ -89,6 +113,7 @@ export interface Company {
   id: string;
   name: string;          // Name of the business owner
   ownerEmail: string;    // Owner's login/Google email
+  collaboratorEmails?: string[]; // Additional Google accounts allowed to manage the company
   storeName: string;     // Exclusive name of their store/brand
   status: 'active' | 'inactive';
   description?: string;
@@ -97,6 +122,3 @@ export interface Company {
   email?: string;
   createdAt: string;
 }
-
-
-

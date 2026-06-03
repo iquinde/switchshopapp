@@ -1,9 +1,9 @@
 import React from 'react';
 import { 
   Building, User, Mail, Search, Plus, Trash2, Edit2, X, Check, Save, 
-  Phone, AlertTriangle, Copy, ExternalLink
+  Phone, AlertTriangle, Copy, ExternalLink, UserPlus, ShieldCheck
 } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { 
   collection, query, onSnapshot, doc, updateDoc, 
   addDoc, deleteDoc, serverTimestamp, setDoc
@@ -11,14 +11,58 @@ import {
 import { Company } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive } from '../lib/offlineDb';
+import { AppRole, UserRoleRecord, normalizeEmail } from '../lib/authz';
 
 interface CompaniesManagerProps {
   companies: Company[];
 }
 
+const PHONE_AREA_CODES = [
+  { label: 'Ecuador', code: '+593' },
+  { label: 'Colombia', code: '+57' },
+  { label: 'Peru', code: '+51' },
+  { label: 'Mexico', code: '+52' },
+  { label: 'Estados Unidos', code: '+1' },
+  { label: 'Espana', code: '+34' },
+];
+
+const splitPhoneValue = (value?: string | null) => {
+  const cleaned = (value || '').trim();
+  const match = PHONE_AREA_CODES.find(area => cleaned.startsWith(area.code));
+
+  if (!match) {
+    return { areaCode: '+593', number: cleaned.replace(/\D/g, '') };
+  }
+
+  return {
+    areaCode: match.code,
+    number: cleaned.slice(match.code.length).replace(/\D/g, ''),
+  };
+};
+
+const buildPhoneValue = (areaCode: string, number: string) => {
+  const cleanNumber = number.replace(/\D/g, '');
+  return cleanNumber ? `${areaCode}${cleanNumber}` : null;
+};
+
+const parseEmailList = (value: string) => {
+  return Array.from(new Set(
+    value
+      .split(/[\n,; ]+/)
+      .map(email => email.trim().toLowerCase())
+      .filter(Boolean)
+  ));
+};
+
 export default function CompaniesManager({ companies }: CompaniesManagerProps) {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
+  const [userRoles, setUserRoles] = React.useState<UserRoleRecord[]>([]);
+  const [roleEmail, setRoleEmail] = React.useState('');
+  const [roleType, setRoleType] = React.useState<AppRole>('company_admin');
+  const [roleCompanyId, setRoleCompanyId] = React.useState('');
+  const [roleStatus, setRoleStatus] = React.useState<'active' | 'inactive'>('active');
+  const [editingRoleEmail, setEditingRoleEmail] = React.useState<string | null>(null);
   
   // Create / Edit modal state
   const [isEditing, setIsEditing] = React.useState(false);
@@ -26,9 +70,12 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
   const [name, setName] = React.useState('');
   const [storeName, setStoreName] = React.useState('');
   const [ownerEmail, setOwnerEmail] = React.useState('');
+  const [collaboratorEmailsText, setCollaboratorEmailsText] = React.useState('');
   const [description, setDescription] = React.useState('');
-  const [phone, setPhone] = React.useState('');
-  const [whatsapp, setWhatsapp] = React.useState('');
+  const [phoneAreaCode, setPhoneAreaCode] = React.useState('+593');
+  const [phoneNumber, setPhoneNumber] = React.useState('');
+  const [whatsappAreaCode, setWhatsappAreaCode] = React.useState('+593');
+  const [whatsappNumber, setWhatsappNumber] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [status, setStatus] = React.useState<'active' | 'inactive'>('active');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -48,13 +95,32 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
     return `${window.location.origin}/tienda/${slugifyStoreName(storeNameValue)}`;
   };
 
+  React.useEffect(() => {
+    if (getOfflineFallbackActive()) return;
+
+    const unsubscribe = onSnapshot(query(collection(db, 'userRoles')), (snapshot) => {
+      const roles = snapshot.docs
+        .map(roleDoc => roleDoc.data() as UserRoleRecord)
+        .sort((a, b) => a.email.localeCompare(b.email));
+      setUserRoles(roles);
+    }, (error) => {
+      console.warn("Error al cargar roles de usuario:", error);
+      setUserRoles([]);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const resetForm = () => {
     setName('');
     setStoreName('');
     setOwnerEmail('');
+    setCollaboratorEmailsText('');
     setDescription('');
-    setPhone('');
-    setWhatsapp('');
+    setPhoneAreaCode('+593');
+    setPhoneNumber('');
+    setWhatsappAreaCode('+593');
+    setWhatsappNumber('');
     setEmail('');
     setStatus('active');
     setCurrentCompany(null);
@@ -71,9 +137,14 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
     setName(comp.name);
     setStoreName(comp.storeName);
     setOwnerEmail(comp.ownerEmail);
+    setCollaboratorEmailsText((comp.collaboratorEmails || []).join('\n'));
     setDescription(comp.description || '');
-    setPhone(comp.phone || '');
-    setWhatsapp(comp.whatsapp || '');
+    const parsedPhone = splitPhoneValue(comp.phone);
+    const parsedWhatsapp = splitPhoneValue(comp.whatsapp);
+    setPhoneAreaCode(parsedPhone.areaCode);
+    setPhoneNumber(parsedPhone.number);
+    setWhatsappAreaCode(parsedWhatsapp.areaCode);
+    setWhatsappNumber(parsedWhatsapp.number);
     setEmail(comp.email || '');
     setStatus(comp.status);
     setIsEditing(true);
@@ -88,13 +159,18 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
 
     setIsSubmitting(true);
 
+    const normalizedOwnerEmail = ownerEmail.trim().toLowerCase();
+    const collaboratorEmails = parseEmailList(collaboratorEmailsText)
+      .filter(email => email !== normalizedOwnerEmail);
+
     const companyPayload = {
       name: name.trim(),
       storeName: storeName.trim(),
-      ownerEmail: ownerEmail.trim().toLowerCase(),
+      ownerEmail: normalizedOwnerEmail,
+      collaboratorEmails,
       description: description.trim() || null,
-      phone: phone.trim() || null,
-      whatsapp: whatsapp.trim() || null,
+      phone: buildPhoneValue(phoneAreaCode, phoneNumber),
+      whatsapp: buildPhoneValue(whatsappAreaCode, whatsappNumber),
       email: email.trim() || null,
       status: status,
       createdAt: currentCompany?.createdAt || new Date().toISOString()
@@ -123,15 +199,83 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
     if (!confirm(`¿Estás seguro de eliminar permanentemente el acceso y perfil de "${store}"?`)) return;
     
     try {
+      await auth.currentUser?.getIdToken(true);
       await deleteDoc(doc(db, 'companies', id));
       alert('Empresa eliminada');
     } catch (error: any) {
       console.error("Error al eliminar empresa de Firebase:", error);
-      alert('Error al eliminar de Firebase: ' + (error?.message || String(error)));
+      const currentUser = auth.currentUser;
+      const sessionInfo = currentUser
+        ? `\nSesion actual: ${currentUser.email || 'sin email'} | email verificado: ${currentUser.emailVerified ? 'si' : 'no'}`
+        : '\nSesion actual: no autenticada';
+      alert('Error al eliminar de Firebase: ' + (error?.message || String(error)) + sessionInfo);
     }
   };
 
-  const adminEmails = ['israel.quinde@gmail.com'];
+  const resetRoleForm = () => {
+    setRoleEmail('');
+    setRoleType('company_admin');
+    setRoleCompanyId('');
+    setRoleStatus('active');
+    setEditingRoleEmail(null);
+  };
+
+  const handleEditRole = (role: UserRoleRecord) => {
+    setRoleEmail(role.email);
+    setRoleType(role.role);
+    setRoleCompanyId(role.companyId || '');
+    setRoleStatus(role.status);
+    setEditingRoleEmail(role.email);
+  };
+
+  const handleSaveRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const normalizedRoleEmail = normalizeEmail(roleEmail);
+    if (!normalizedRoleEmail) {
+      alert('Ingresa el email del usuario.');
+      return;
+    }
+
+    if (roleType !== 'super_admin' && !roleCompanyId) {
+      alert('Selecciona una empresa para este rol.');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const existingRole = userRoles.find(role => role.email === normalizedRoleEmail);
+    const payload: UserRoleRecord = {
+      email: normalizedRoleEmail,
+      role: roleType,
+      companyId: roleType === 'super_admin' ? null : roleCompanyId,
+      status: roleStatus,
+      createdAt: existingRole?.createdAt || now,
+      updatedAt: now,
+    };
+
+    try {
+      await setDoc(doc(db, 'userRoles', normalizedRoleEmail), payload);
+      alert('Rol guardado exitosamente');
+      resetRoleForm();
+    } catch (error: any) {
+      console.error("Error al guardar rol de usuario:", error);
+      alert('Error al guardar rol: ' + (error?.message || String(error)));
+    }
+  };
+
+  const handleDeleteRole = async (email: string) => {
+    if (!confirm(`Eliminar el rol asignado a "${email}"?`)) return;
+
+    try {
+      await deleteDoc(doc(db, 'userRoles', email));
+      if (editingRoleEmail === email) resetRoleForm();
+      alert('Rol eliminado');
+    } catch (error: any) {
+      console.error("Error al eliminar rol de usuario:", error);
+      alert('Error al eliminar rol: ' + (error?.message || String(error)));
+    }
+  };
+
   const filtered = companies.filter(c => {
     // Only exclude fixed 'comp-default' to prevent breaking essential system entries
     if (c.id === 'comp-default') {
@@ -139,7 +283,8 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
     }
     return c.storeName.toLowerCase().includes(searchTerm.toLowerCase()) || 
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      c.ownerEmail.toLowerCase().includes(searchTerm.toLowerCase());
+      c.ownerEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.collaboratorEmails || []).some(email => email.toLowerCase().includes(searchTerm.toLowerCase()));
   });
 
   return (
@@ -169,6 +314,117 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
         />
       </div>
 
+      <section className="bg-white border border-stone-100 rounded-2xl shadow-sm p-5 space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={18} className="text-stone-700" />
+              <h3 className="font-serif font-bold text-lg text-stone-900">Roles de usuarios</h3>
+            </div>
+            <p className="text-xs text-stone-500 mt-1">Asigna permisos globales o por empresa a cuentas Google verificadas.</p>
+          </div>
+
+          <form onSubmit={handleSaveRole} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1.1fr)_160px_minmax(180px,1fr)_120px_auto] gap-2 w-full lg:max-w-5xl">
+            <input
+              type="email"
+              required
+              placeholder="usuario@gmail.com"
+              value={roleEmail}
+              onChange={(e) => setRoleEmail(e.target.value)}
+              className="px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
+            />
+            <select
+              value={roleType}
+              onChange={(e) => setRoleType(e.target.value as AppRole)}
+              className="px-3 py-2 border border-stone-200 bg-white rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-bold"
+            >
+              <option value="company_admin">Admin empresa</option>
+              <option value="company_staff">Colaborador</option>
+              <option value="super_admin">Super admin</option>
+            </select>
+            <select
+              value={roleCompanyId}
+              onChange={(e) => setRoleCompanyId(e.target.value)}
+              disabled={roleType === 'super_admin'}
+              className="px-3 py-2 border border-stone-200 bg-white rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-bold disabled:bg-stone-50 disabled:text-stone-400"
+            >
+              <option value="">Empresa</option>
+              {companies.filter(company => company.id !== 'comp-default').map(company => (
+                <option key={company.id} value={company.id}>{company.storeName}</option>
+              ))}
+            </select>
+            <select
+              value={roleStatus}
+              onChange={(e) => setRoleStatus(e.target.value as 'active' | 'inactive')}
+              className="px-3 py-2 border border-stone-200 bg-white rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-bold"
+            >
+              <option value="active">Activo</option>
+              <option value="inactive">Inactivo</option>
+            </select>
+            <div className="flex gap-2 sm:col-span-2 xl:col-span-1">
+              {editingRoleEmail && (
+                <button
+                  type="button"
+                  onClick={resetRoleForm}
+                  className="h-10 px-3 border border-stone-200 rounded-xl text-xs font-bold text-stone-500 hover:bg-stone-50"
+                >
+                  Cancelar
+                </button>
+              )}
+              <button
+                type="submit"
+                className="h-10 px-4 bg-stone-900 text-white hover:bg-primary font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow flex-1"
+              >
+                <Save size={14} />
+                <span>{editingRoleEmail ? 'Actualizar' : 'Asignar'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {userRoles.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {userRoles.map(role => {
+              const company = companies.find(comp => comp.id === role.companyId);
+              return (
+                <div key={role.email} className="border border-stone-100 rounded-xl p-3 flex items-start justify-between gap-3 bg-stone-50/60">
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs font-bold text-stone-800 truncate">{role.email}</p>
+                    <p className="text-[11px] text-stone-500 mt-1">
+                      {role.role === 'super_admin' ? 'Super admin' : role.role === 'company_admin' ? 'Admin empresa' : 'Colaborador'}
+                      {company ? ` - ${company.storeName}` : ''}
+                    </p>
+                    <span className={`inline-flex mt-2 text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full ${
+                      role.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                    }`}>
+                      {role.status === 'active' ? 'Activo' : 'Inactivo'}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleEditRole(role)}
+                      className="p-2 text-stone-500 hover:text-stone-900 hover:bg-white rounded-lg transition-colors"
+                      title="Editar rol"
+                    >
+                      <Edit2 size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteRole(role.email)}
+                      className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Eliminar rol"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filtered.map(comp => (
           <div 
@@ -197,6 +453,14 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
                   <Mail size={14} className="text-stone-400" />
                   <span className="font-mono">{comp.ownerEmail}</span>
                 </div>
+                {(comp.collaboratorEmails || []).length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <UserPlus size={14} className="text-stone-400 mt-0.5" />
+                    <span className="font-mono leading-relaxed">
+                      {(comp.collaboratorEmails || []).join(', ')}
+                    </span>
+                  </div>
+                )}
                 {(comp.phone || comp.whatsapp) && (
                   <div className="flex items-center gap-2">
                     <Phone size={14} className="text-stone-400" />
@@ -347,6 +611,22 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
 
               <div>
                 <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
+                  Usuarios autorizados adicionales
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="otro.usuario@gmail.com"
+                  value={collaboratorEmailsText}
+                  onChange={(e) => setCollaboratorEmailsText(e.target.value)}
+                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
+                />
+                <span className="text-[10px] text-stone-400 mt-1 block leading-relaxed">
+                  Separa varios correos con coma, espacio o una linea nueva. Cada correo podra entrar con Google y gestionar esta misma empresa.
+                </span>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
                   Descripción Corta
                 </label>
                 <textarea 
@@ -364,25 +644,49 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
                   <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
                     Teléfono
                   </label>
-                  <input 
-                    type="text" 
-                    placeholder="+593 9999999"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
-                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={phoneAreaCode}
+                      onChange={(e) => setPhoneAreaCode(e.target.value)}
+                      className="w-24 px-2 py-2 border border-stone-200 bg-white rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-bold"
+                    >
+                      {PHONE_AREA_CODES.map(area => (
+                        <option key={area.code} value={area.code}>{area.code}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      placeholder="999999999"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
                     WhatsApp (Solo Números)
                   </label>
-                  <input 
-                    type="text" 
-                    placeholder="593999999"
-                    value={whatsapp}
-                    onChange={(e) => setWhatsapp(e.target.value)}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
-                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={whatsappAreaCode}
+                      onChange={(e) => setWhatsappAreaCode(e.target.value)}
+                      className="w-24 px-2 py-2 border border-stone-200 bg-white rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-bold"
+                    >
+                      {PHONE_AREA_CODES.map(area => (
+                        <option key={area.code} value={area.code}>{area.code}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      placeholder="999999999"
+                      value={whatsappNumber}
+                      onChange={(e) => setWhatsappNumber(e.target.value.replace(/\D/g, ''))}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
+                    />
+                  </div>
                 </div>
               </div>
 

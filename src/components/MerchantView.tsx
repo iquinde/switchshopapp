@@ -4,6 +4,7 @@ import BottomNav from './BottomNav';
 import MerchantDashboard from './MerchantDashboard';
 import InventoryManager from './InventoryManager';
 import OrdersManager from './OrdersManager';
+import PurchasesManager from './PurchasesManager';
 import ReceivablesManager from './ReceivablesManager';
 import CustomersManager from './CustomersManager';
 import CompaniesManager from './CompaniesManager';
@@ -253,6 +254,7 @@ const MerchantView: React.FC<MerchantViewProps> = ({
 
           {activeTab === 'dashboard' && <MerchantDashboard onNavigate={setActiveTab} companyId={currentCompanyId} />}
           {activeTab === 'inventory' && <InventoryManager products={products} companyId={currentCompanyId} />}
+          {activeTab === 'purchases' && <PurchasesManager products={products} companyId={currentCompanyId} />}
           {activeTab === 'orders' && (
             <OrdersManager 
               products={products} 

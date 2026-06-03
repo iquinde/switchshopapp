@@ -1,4 +1,4 @@
-import { Product, Customer, Order, PaymentTransaction, StoreSettings, Company } from '../types';
+import { Product, Customer, Order, PaymentTransaction, Purchase, StoreSettings, Company } from '../types';
 
 export const OFFLINE_CHANGE_EVENT = 'local-db-updated';
 
@@ -141,11 +141,14 @@ const DEFAULT_ORDERS: Order[] = [
   },
 ];
 
+const DEFAULT_PURCHASES: Purchase[] = [];
+
 const DEFAULT_COMPANIES: Company[] = [
   {
     id: "comp-default",
     name: "Israel Quinde",
     ownerEmail: "israel.quinde@gmail.com",
+    collaboratorEmails: [],
     storeName: "SwitchShop Matriz",
     status: "active",
     description: "Tienda principal de especialidades artesanales y café de altura.",
@@ -158,6 +161,7 @@ const DEFAULT_COMPANIES: Company[] = [
     id: "comp-1",
     name: "Ana María Santos",
     ownerEmail: "ana.santos@switchshop.com",
+    collaboratorEmails: [],
     storeName: "Esencias & Aromas",
     status: "active",
     description: "Velas de soya, aceites esenciales y fragancias orgánicas ornamentales.",
@@ -170,6 +174,7 @@ const DEFAULT_COMPANIES: Company[] = [
     id: "comp-2",
     name: "Carlos Mendoza",
     ownerEmail: "carlos.mendoza@switchshop.com",
+    collaboratorEmails: [],
     storeName: "Cacao Ancestral",
     status: "active",
     description: "Chocolates finos de aroma, bombones artesanales y coberturas gourmet.",
@@ -318,6 +323,38 @@ export const offlineDb = {
   deleteOrder(id: string) {
     const list = this.getOrders().filter(o => o.id !== id);
     saveLocalCollection('orders', list);
+  },
+
+  // Purchases
+  getPurchases(): Purchase[] {
+    return getLocalCollection<Purchase>('purchases', DEFAULT_PURCHASES);
+  },
+  savePurchase(purchase: Partial<Purchase> & { id?: string }): Purchase {
+    const list = this.getPurchases();
+    let updated: Purchase;
+    if (purchase.id) {
+      const idx = list.findIndex(p => p.id === purchase.id);
+      if (idx !== -1) {
+        list[idx] = { ...list[idx], ...purchase } as Purchase;
+        updated = list[idx];
+      } else {
+        updated = { ...purchase, id: purchase.id } as Purchase;
+        list.push(updated);
+      }
+    } else {
+      updated = {
+        ...purchase,
+        id: `local-pur-${Date.now()}`,
+        createdAt: new Date().toISOString()
+      } as Purchase;
+      list.unshift(updated);
+    }
+    saveLocalCollection('purchases', list);
+    return updated;
+  },
+  deletePurchase(id: string) {
+    const list = this.getPurchases().filter(p => p.id !== id);
+    saveLocalCollection('purchases', list);
   },
 
   // Payment Transactions (Abonos)

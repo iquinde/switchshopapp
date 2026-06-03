@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "deploy:rules": "firebase deploy --only firestore:rules",
     "deploy:dev": "npm run build && npx firebase-tools hosting:channel:deploy dev",
     "deploy:prod": "npm run build && firebase deploy --only hosting"
   },

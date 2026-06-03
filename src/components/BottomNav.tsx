@@ -2,6 +2,7 @@ import React from 'react';
 import { 
   LayoutDashboard, 
   Package, 
+  PackagePlus,
   History, 
   Users, 
   Settings,
@@ -18,9 +19,10 @@ interface BottomNavProps {
 const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab, isSuperAdmin = false }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Inicio', icon: LayoutDashboard },
-    { id: 'inventory', label: 'Inventario', icon: Package },
-    { id: 'orders', label: 'Pedidos', icon: History },
-    { id: 'receivables', label: 'Cartera', icon: Receipt },
+    { id: 'inventory', label: 'Stock', icon: Package },
+    { id: 'purchases', label: 'Compras', icon: PackagePlus },
+    { id: 'orders', label: 'Ventas', icon: History },
+    { id: 'receivables', label: 'Cobros', icon: Receipt },
     ...(isSuperAdmin ? [{ id: 'companies', label: 'Empresas', icon: Building2 }] : [{ id: 'customers', label: 'Clientes', icon: Users }]),
     { id: 'settings', label: 'Configuración', icon: Settings },
   ];

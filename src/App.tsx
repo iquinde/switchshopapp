@@ -14,6 +14,7 @@ import { Product, CartItem, StoreSettings, Company } from './types';
 import { AnimatePresence } from 'motion/react';
 import { LayoutDashboard, LogIn, ShieldCheck, Store } from 'lucide-react';
 import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive, OFFLINE_CHANGE_EVENT } from './lib/offlineDb';
+import { UserRoleRecord, canAccessCompany, isSuperAdminUser, normalizeEmail } from './lib/authz';
 
 interface LoginScreenProps {
   onLogin: () => void;
@@ -130,6 +131,7 @@ export default function App() {
   const [activeCategory, setActiveCategory] = React.useState<string>('todos');
   const [searchTerm, setSearchTerm] = React.useState<string>('');
   const [user, setUser] = React.useState<any>(null);
+  const [userRole, setUserRole] = React.useState<UserRoleRecord | null>(null);
   const [isAuthReady, setIsAuthReady] = React.useState(false);
   const [isLoggingIn, setIsLoggingIn] = React.useState(false);
   const [loginError, setLoginError] = React.useState('');
@@ -280,9 +282,8 @@ export default function App() {
     return products.filter(p => p.companyId && p.companyId !== 'comp-default');
   }, [products, activeCompany]);
 
-  const adminEmails = ['israel.quinde@gmail.com'];
-  const isAdmin = user && adminEmails.includes(user.email);
-  const userCompany = user ? companies.find(c => c.ownerEmail === user.email && c.status === 'active') : null;
+  const isAdmin = isSuperAdminUser(user?.email, user?.emailVerified, userRole);
+  const userCompany = user ? companies.find(c => canAccessCompany(c, user.email, user.emailVerified, userRole)) : null;
   const isMerchant = isAdmin || !!userCompany;
 
   React.useEffect(() => {
@@ -369,9 +370,9 @@ export default function App() {
       }
       // Auto switch to merchant mode if admin or company owner logs in
       if (currentUser) {
-        const isUserAdmin = adminEmails.includes(currentUser.email || '');
+        const isUserAdmin = isSuperAdminUser(currentUser.email, currentUser.emailVerified);
         const comps = offlineDb.getCompanies();
-        const isOwner = comps.some(c => c.ownerEmail === currentUser.email && c.status === 'active');
+        const isOwner = comps.some(c => canAccessCompany(c, currentUser.email, currentUser.emailVerified));
         if (isUserAdmin || isOwner) {
           setIsMerchantMode(true);
         }
@@ -382,6 +383,23 @@ export default function App() {
       unsubscribe();
     };
   }, []);
+
+  React.useEffect(() => {
+    const email = normalizeEmail(user?.email);
+    if (!isAuthReady || !user || !email || isOfflineMode) {
+      setUserRole(null);
+      return;
+    }
+
+    const unsubscribe = onSnapshot(doc(db, 'userRoles', email), (snapshot) => {
+      setUserRole(snapshot.exists() ? (snapshot.data() as UserRoleRecord) : null);
+    }, (error) => {
+      console.warn("Firestore user role connection failed:", error);
+      setUserRole(null);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthReady, isOfflineMode, user]);
 
   // Real-time Companies Listener (with graceful offline fallback)
   React.useEffect(() => {
