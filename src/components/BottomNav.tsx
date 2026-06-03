@@ -24,7 +24,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab, isSuperA
     { id: 'orders', label: 'Ventas', icon: History },
     { id: 'receivables', label: 'Cobros', icon: Receipt },
     ...(isSuperAdmin ? [{ id: 'companies', label: 'Empresas', icon: Building2 }] : [{ id: 'customers', label: 'Clientes', icon: Users }]),
-    { id: 'settings', label: 'Ajustes', icon: Settings },
+    { id: 'settings', label: 'Configuración', icon: Settings },
   ];
 
   return (
@@ -42,7 +42,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab, isSuperA
           <div className={`p-1 rounded-lg transition-colors ${activeTab === item.id ? 'bg-primary/5' : ''}`}>
             <item.icon size={18} />
           </div>
-          <span className="text-[9px] mt-0.5 font-semibold tracking-tight">{item.label}</span>
+          <span className="text-[8px] mt-0.5 font-semibold tracking-tight leading-tight max-w-full truncate">{item.label}</span>
         </button>
       ))}
     </div>

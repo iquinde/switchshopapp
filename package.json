@@ -10,7 +10,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "deploy:rules": "firebase deploy --only firestore:rules",
-    "deploy:dev": "npm run build && firebase hosting:channel:deploy dev",
+    "deploy:dev": "npm run build && npx firebase-tools hosting:channel:deploy dev",
     "deploy:prod": "npm run build && firebase deploy --only hosting"
   },
   "dependencies": {

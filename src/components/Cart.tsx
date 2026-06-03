@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CartItem, Order, Customer } from '../types';
 import { db } from '../firebase';
 import { collection, query, where, getDocs, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import ProductImageFallback from './ProductImageFallback';
+import { isRealProductImage } from '../lib/productImages';
 
 interface CartProps {
   isOpen: boolean;
@@ -426,7 +428,11 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
                     items.map((item) => (
                       <div key={item.id} className="flex space-x-4">
                         <div className="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0">
-                          <img src={item.image} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          {isRealProductImage(item.image) ? (
+                            <img src={item.image} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <ProductImageFallback compact />
+                          )}
                         </div>
                         <div className="flex-1">
                           <div className="flex justify-between">

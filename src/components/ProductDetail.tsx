@@ -2,6 +2,8 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ShoppingCart, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Product } from '../types';
+import ProductImageFallback from './ProductImageFallback';
+import { getRealProductImages } from '../lib/productImages';
 
 interface ProductDetailProps {
   product: Product;
@@ -10,7 +12,7 @@ interface ProductDetailProps {
 }
 
 export default function ProductDetail({ product, onClose, onAddToCart }: ProductDetailProps) {
-  const images = product.images || [product.image];
+  const images = getRealProductImages(product.images, product.image);
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
 
   const nextImage = () => {
@@ -39,16 +41,28 @@ export default function ProductDetail({ product, onClose, onAddToCart }: Product
         {/* Image Gallery */}
         <div className="relative w-full md:w-1/2 bg-stone-100 aspect-square md:aspect-auto">
           <AnimatePresence mode="wait">
-            <motion.img
-              key={currentImageIndex}
-              src={images[currentImageIndex]}
-              alt={product.name}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
+            {images.length > 0 ? (
+              <motion.img
+                key={currentImageIndex}
+                src={images[currentImageIndex]}
+                alt={product.name}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <motion.div
+                key="no-image"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="h-full w-full"
+              >
+                <ProductImageFallback />
+              </motion.div>
+            )}
           </AnimatePresence>
 
           {images.length > 1 && (

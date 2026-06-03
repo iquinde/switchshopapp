@@ -19,7 +19,6 @@ interface CatalogViewProps {
   settings?: any;
   companies?: Company[];
   activeCompany?: Company | null;
-  onClearActiveCompany?: () => void;
 }
 
 const CatalogView: React.FC<CatalogViewProps> = ({
@@ -35,8 +34,7 @@ const CatalogView: React.FC<CatalogViewProps> = ({
   user,
   settings,
   companies = [],
-  activeCompany,
-  onClearActiveCompany
+  activeCompany
 }) => {
   const [selectedCompanyId, setSelectedCompanyId] = React.useState<string>('all');
 
@@ -70,23 +68,10 @@ const CatalogView: React.FC<CatalogViewProps> = ({
 
   return (
     <main>
-      <Hero user={user} settings={settings} />
+      <Hero user={user} activeCompany={activeCompany} settings={settings} />
 
       <section id="productos" className="scroll-mt-24 py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          {activeCompany && (
-            <div className="mb-8 inline-flex items-center gap-3 bg-stone-50 border border-stone-200/60 text-stone-850 px-4 py-2.5 rounded-2xl shadow-sm text-xs sm:text-sm animate-in fade-in duration-300">
-              <span className="font-bold">🏪 Tienda de <strong className="text-[#8b5a2b] font-serif font-bold text-sm tracking-tight">{activeCompany.storeName}</strong></span>
-              {onClearActiveCompany && (
-                <button 
-                  onClick={onClearActiveCompany}
-                  className="ml-2 font-bold text-stone-500 hover:text-stone-900 bg-white hover:bg-stone-100 px-3 py-1.5 rounded-xl border border-stone-200 transition-colors uppercase tracking-wider text-[10px]"
-                >
-                  Volver al Directorio
-                </button>
-              )}
-            </div>
-          )}
 
           <h2 className="text-4xl md:text-5xl font-serif font-bold text-stone-900 mb-4">Nuestros Productos</h2>
           <p className="text-stone-500 max-w-2xl mx-auto">

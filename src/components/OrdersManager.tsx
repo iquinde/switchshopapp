@@ -1,7 +1,8 @@
 import React from 'react';
 import { 
   Search, Filter, ChevronDown, Check, Truck, CreditCard, Clock, X, 
-  Eye, FileText, Landmark, RefreshCw, BadgeAlert, Trash2, Calendar
+  Eye, FileText, Landmark, RefreshCw, BadgeAlert, Trash2, Calendar,
+  Minus, Plus
 } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { 
@@ -11,6 +12,8 @@ import {
 import { Order, Product, Customer, PaymentTransaction } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive, OFFLINE_CHANGE_EVENT } from '../lib/offlineDb';
+import ProductImageFallback from './ProductImageFallback';
+import { isRealProductImage } from '../lib/productImages';
 
 interface OrdersManagerProps {
   products: Product[];
@@ -40,6 +43,10 @@ export default function OrdersManager({
   const companyCustomers = React.useMemo(() => {
     return customers.filter(matchesActiveCompany);
   }, [customers, matchesActiveCompany]);
+
+  const companyProducts = React.useMemo(() => {
+    return products.filter(matchesActiveCompany);
+  }, [products, matchesActiveCompany]);
 
   const activeAssociatedCustomer = selectedOrder 
     ? companyCustomers.find(c => c.id === selectedOrder.customerId || (selectedOrder.customerPhone && c.phone === selectedOrder.customerPhone)) 
@@ -98,6 +105,10 @@ export default function OrdersManager({
   };
 
   const [isOfflineMode, setIsOfflineMode] = React.useState(getOfflineFallbackActive());
+
+  React.useEffect(() => {
+    setOrderItems(prev => prev.filter(item => matchesActiveCompany(item.product)));
+  }, [matchesActiveCompany]);
 
   React.useEffect(() => {
     const handleSync = () => {
@@ -557,7 +568,11 @@ export default function OrdersManager({
     setOrderItems(prev => {
       const match = prev.find(item => item.product.id === prod.id);
       if (match) {
-        return prev.map(item => item.product.id === prod.id ? { ...item, quantity: item.quantity + 1 } : item);
+        return prev.map(item => (
+          item.product.id === prod.id
+            ? { ...item, quantity: Math.min(prod.stock, item.quantity + 1) }
+            : item
+        ));
       }
       return [...prev, { product: prod, quantity: 1 }];
     });
@@ -572,7 +587,9 @@ export default function OrdersManager({
   const changeManualItemQty = (prodId: string, quantity: number) => {
     setOrderItems(prev => prev.map(item => {
       if (item.product.id === prodId) {
-        return { ...item, quantity: Math.max(1, quantity) };
+        const maxStock = Math.max(1, item.product.stock);
+        const nextQuantity = Number.isFinite(quantity) ? quantity : 1;
+        return { ...item, quantity: Math.min(maxStock, Math.max(1, nextQuantity)) };
       }
       return item;
     }));
@@ -582,7 +599,7 @@ export default function OrdersManager({
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (orderItems.length === 0) {
-      alert('Debes agregar al menos una pulsera al pedido');
+      alert('Debes agregar al menos un producto al pedido');
       return;
     }
 
@@ -1175,12 +1192,18 @@ export default function OrdersManager({
                   <div className="divide-y divide-stone-50">
                     {selectedOrder.items.map((item, index) => (
                       <div key={index} className="flex items-center gap-3 py-2 text-xs">
-                        <img 
-                          src={item.image} 
-                          alt="" 
-                          className="w-10 h-10 object-cover rounded-lg bg-stone-100 flex-shrink-0"
-                          referrerPolicy="no-referrer"
-                        />
+                        <div className="w-10 h-10 overflow-hidden rounded-lg bg-stone-100 flex-shrink-0">
+                          {isRealProductImage(item.image) ? (
+                            <img
+                              src={item.image}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <ProductImageFallback compact />
+                          )}
+                        </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-stone-900 truncate">{item.name}</p>
                           <p className="text-stone-400 font-mono text-[10px]">SKU: {item.sku || 'N/A'}</p>
@@ -1580,9 +1603,9 @@ export default function OrdersManager({
 
                 {/* Step 2: Choose Products */}
                 <div className="space-y-3">
-                  <h4 className="text-[10px] font-bold text-stone-400 tracking-wider uppercase">2. Seleccionar Pulseras</h4>
+                  <h4 className="text-[10px] font-bold text-stone-400 tracking-wider uppercase">2. Seleccionar Productos</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1 bg-stone-50 rounded-xl border border-stone-100">
-                    {products.filter(p => p.status !== 'inactive').map(prod => (
+                    {companyProducts.filter(p => p.status !== 'inactive').map(prod => (
                       <button
                         key={prod.id}
                         type="button"
@@ -1590,7 +1613,13 @@ export default function OrdersManager({
                         disabled={prod.stock <= 0}
                         className="flex items-center gap-2 p-1.5 bg-white border border-stone-100 rounded-lg text-left active:scale-[0.98] transition-all disabled:opacity-50"
                       >
-                        <img src={prod.image} className="w-8 h-8 rounded object-cover" alt="" referrerPolicy="no-referrer" />
+                        <div className="w-8 h-8 rounded overflow-hidden bg-stone-100 shrink-0">
+                          {isRealProductImage(prod.image) ? (
+                            <img src={prod.image} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
+                          ) : (
+                            <ProductImageFallback compact />
+                          )}
+                        </div>
                         <div className="min-w-0">
                           <p className="text-[10px] font-bold text-stone-850 truncate">{prod.name}</p>
                           <p className="text-[9px] text-stone-400 font-bold">${prod.price.toFixed(2)} (Stock: {prod.stock})</p>
@@ -1610,14 +1639,37 @@ export default function OrdersManager({
                             <p className="text-stone-400 text-[9px]">${item.product.price.toFixed(2)} c/u</p>
                           </div>
                           <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              min="1"
-                              max={item.product.stock}
-                              value={item.quantity}
-                              onChange={e => changeManualItemQty(item.product.id, parseInt(e.target.value) || 1)}
-                              className="w-12 text-center py-0.5 border border-stone-150 bg-white rounded text-xs outline-none"
-                            />
+                            <div className="inline-flex h-9 items-center rounded-xl border border-stone-200 bg-white shadow-xs overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => changeManualItemQty(item.product.id, item.quantity - 1)}
+                                disabled={item.quantity <= 1}
+                                className="h-full w-8 inline-flex items-center justify-center text-stone-500 hover:bg-stone-50 disabled:opacity-35 disabled:cursor-not-allowed"
+                                title="Restar cantidad"
+                              >
+                                <Minus size={13} />
+                              </button>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min="1"
+                                max={item.product.stock}
+                                value={item.quantity}
+                                onFocus={e => e.currentTarget.select()}
+                                onClick={e => e.currentTarget.select()}
+                                onChange={e => changeManualItemQty(item.product.id, parseInt(e.target.value, 10))}
+                                className="h-full w-11 border-x border-stone-100 bg-white text-center text-xs font-bold text-stone-800 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => changeManualItemQty(item.product.id, item.quantity + 1)}
+                                disabled={item.quantity >= item.product.stock}
+                                className="h-full w-8 inline-flex items-center justify-center text-stone-500 hover:bg-stone-50 disabled:opacity-35 disabled:cursor-not-allowed"
+                                title="Sumar cantidad"
+                              >
+                                <Plus size={13} />
+                              </button>
+                            </div>
                             <button
                               type="button"
                               onClick={() => removeManualItem(item.product.id)}

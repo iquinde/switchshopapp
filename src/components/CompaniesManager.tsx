@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   Building, User, Mail, Search, Plus, Trash2, Edit2, X, Check, Save, 
-  Phone, Copy, UserPlus
+  Phone, AlertTriangle, Copy, ExternalLink
 } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { 
@@ -72,6 +72,21 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
   const [email, setEmail] = React.useState('');
   const [status, setStatus] = React.useState<'active' | 'inactive'>('active');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+
+  const slugifyStoreName = (text: string): string => {
+    return text
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9 -]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+  };
+
+  const getStoreUrl = (storeNameValue: string) => {
+    return `${window.location.origin}/tienda/${slugifyStoreName(storeNameValue)}`;
+  };
 
   const resetForm = () => {
     setName('');
@@ -260,49 +275,48 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
               {/* Copy Customer Store URL */}
               <div className="mt-4 pt-3 border-t border-stone-100 flex flex-col gap-1.5 bg-stone-50/60 p-2.5 rounded-xl border border-stone-100/50">
                 <span className="text-[9px] uppercase font-bold text-stone-400 font-mono tracking-tight">Copiar enlace de tienda (subruta):</span>
-                <button
-                  onClick={() => {
-                    const slugifyFn = (text: string): string => {
-                      return text
-                        .toString()
-                        .toLowerCase()
-                        .normalize('NFD')
-                        .replace(/[\u0300-\u036f]/g, '')
-                        .replace(/[^a-z0-9 -]/g, '')
-                        .replace(/\s+/g, '-')
-                        .replace(/-+/g, '-');
-                    };
-                    const subruta = slugifyFn(comp.storeName);
-                    // Built path for premium clean subroute routing 
-                    const shareUrl = `${window.location.origin}/tienda/${subruta}`;
-                    navigator.clipboard.writeText(shareUrl).then(() => {
-                      setCopiedId(comp.id);
-                      setTimeout(() => setCopiedId(null), 2500);
-                    }).catch(() => {
-                      const fallbackUrl = `${window.location.origin}/?tienda=${subruta}`;
-                      navigator.clipboard.writeText(fallbackUrl).then(() => {
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const subruta = slugifyStoreName(comp.storeName);
+                      const shareUrl = getStoreUrl(comp.storeName);
+                      navigator.clipboard.writeText(shareUrl).then(() => {
                         setCopiedId(comp.id);
                         setTimeout(() => setCopiedId(null), 2500);
+                      }).catch(() => {
+                        const fallbackUrl = `${window.location.origin}/?tienda=${subruta}`;
+                        navigator.clipboard.writeText(fallbackUrl).then(() => {
+                          setCopiedId(comp.id);
+                          setTimeout(() => setCopiedId(null), 2500);
+                        });
                       });
-                    });
-                  }}
-                  type="button"
-                  className={`w-full text-left py-1.5 px-2.5 rounded-lg border flex items-center justify-between text-[11px] transition-all duration-200 ${
-                    copiedId === comp.id 
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-bold' 
-                      : 'bg-white hover:bg-stone-50 border-stone-200 text-stone-600 font-medium'
-                  }`}
-                  title="Haz click para copiar el enlace"
-                >
-                  <span className="truncate font-mono">
-                    {copiedId === comp.id ? '¡Copiado Exitosamente!' : `/tienda/${comp.storeName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
-                  </span>
-                  {copiedId === comp.id ? (
-                    <Check size={12} className="text-emerald-600 flex-shrink-0" />
-                  ) : (
-                    <Copy size={11} className="text-stone-400 flex-shrink-0" />
-                  )}
-                </button>
+                    }}
+                    type="button"
+                    className={`min-w-0 flex-1 text-left py-1.5 px-2.5 rounded-lg border flex items-center justify-between text-[11px] transition-all duration-200 ${
+                      copiedId === comp.id 
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-bold' 
+                        : 'bg-white hover:bg-stone-50 border-stone-200 text-stone-600 font-medium'
+                    }`}
+                    title="Haz click para copiar el enlace"
+                  >
+                    <span className="truncate font-mono">
+                      {copiedId === comp.id ? '¡Copiado Exitosamente!' : `/tienda/${slugifyStoreName(comp.storeName)}`}
+                    </span>
+                    {copiedId === comp.id ? (
+                      <Check size={12} className="text-emerald-600 flex-shrink-0" />
+                    ) : (
+                      <Copy size={11} className="text-stone-400 flex-shrink-0" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => window.open(getStoreUrl(comp.storeName), '_blank', 'noopener,noreferrer')}
+                    type="button"
+                    className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-500 hover:bg-stone-900 hover:border-stone-900 hover:text-white transition-all"
+                    title="Abrir tienda en una nueva pestaña"
+                  >
+                    <ExternalLink size={13} />
+                  </button>
+                </div>
               </div>
             </div>
 

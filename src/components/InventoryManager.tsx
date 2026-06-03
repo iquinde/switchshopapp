@@ -1,10 +1,12 @@
 import React from 'react';
-import { Plus, Trash2, Edit2, X, Save, Image as ImageIcon, Search, Filter, ArrowUpDown, Loader2 } from 'lucide-react';
+import { AlertTriangle, Plus, Trash2, Edit2, X, Save, Image as ImageIcon, Search, Filter, ArrowUpDown, Loader2 } from 'lucide-react';
 import { storage, ref, uploadBytes, getDownloadURL, db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, updateDoc, deleteDoc, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Product } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive } from '../lib/offlineDb';
+import ProductImageFallback from './ProductImageFallback';
+import { getRealProductImages, isRealProductImage } from '../lib/productImages';
 
 interface InventoryManagerProps {
   products: Product[];
@@ -39,6 +41,8 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
   const [searchTerm, setSearchTerm] = React.useState('');
   const [activeFilter, setActiveFilter] = React.useState<'Todos' | 'Bajo Stock' | 'Inactivos'>('Todos');
   const [alertPercentage, setAlertPercentage] = React.useState(20);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = React.useState(false);
+  const [deleteTargetId, setDeleteTargetId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const loadSettings = () => {
@@ -82,6 +86,8 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
     setPreviewUrls([]);
     setExistingImages([]);
     setEditingId(null);
+    setIsDeleteConfirmOpen(false);
+    setDeleteTargetId(null);
     setIsAdding(false);
   };
 
@@ -116,7 +122,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
       sku: product.sku || '',
       status: product.status || 'active'
     });
-    const images = product.images || [product.image];
+    const images = getRealProductImages(product.images, product.image);
     setExistingImages(images);
     setPreviewUrls(images);
     setEditingId(product.id);
@@ -156,7 +162,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
     setIsUploading(true);
     
     const isOffline = getOfflineFallbackActive();
-    const fallbackImage = previewUrls[0] || 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=600';
+    const fallbackImage = previewUrls[0] || '';
     
     // Choose which company this product goes to (defaults to active companyId, or previous value)
     const finalCompanyId = editingId 
@@ -176,7 +182,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
       sku: finalSku,
       status: formData.status,
       image: fallbackImage,
-      images: previewUrls.length > 0 ? previewUrls : [fallbackImage],
+      images: previewUrls.length > 0 ? previewUrls : [],
       companyId: finalCompanyId
     };
 
@@ -238,7 +244,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
         sku: finalSku,
         status: formData.status,
         image: uploadedUrls[0] || fallbackImage,
-        images: uploadedUrls.length > 0 ? uploadedUrls : [fallbackImage],
+        images: uploadedUrls.length > 0 ? uploadedUrls : [],
         companyId: finalCompanyId,
         createdAt: editingId ? (products.find(p => p.id === editingId)?.createdAt || serverTimestamp()) : serverTimestamp()
       };
@@ -261,8 +267,12 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('¿Eliminar este producto?')) return;
+  const requestDeleteProduct = (id: string) => {
+    setDeleteTargetId(id);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const executeDeleteProduct = async (id: string) => {
     if (getOfflineFallbackActive()) {
       offlineDb.deleteProduct(id);
       alert('Producto eliminado localmente');
@@ -276,6 +286,18 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
       setOfflineFallbackActive(true);
       offlineDb.deleteProduct(id);
       alert('Producto eliminado localmente');
+    }
+  };
+
+  const confirmDeleteProduct = async () => {
+    if (!deleteTargetId) return;
+    const wasEditingDeletedProduct = editingId === deleteTargetId;
+    await executeDeleteProduct(deleteTargetId);
+    setIsDeleteConfirmOpen(false);
+    setDeleteTargetId(null);
+
+    if (wasEditingDeletedProduct) {
+      resetForm();
     }
   };
 
@@ -373,12 +395,18 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                     <tr key={product.id} className="hover:bg-stone-50/50 transition-colors group">
                       <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm">
                         <div className="flex items-center gap-3 sm:gap-4">
-                          <img 
-                            src={product.image} 
-                            alt="" 
-                            className="w-8 h-8 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl object-cover bg-stone-100 flex-shrink-0"
-                            referrerPolicy="no-referrer"
-                          />
+                          <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl overflow-hidden bg-stone-100 flex-shrink-0">
+                            {isRealProductImage(product.image) ? (
+                              <img
+                                src={product.image}
+                                alt=""
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <ProductImageFallback compact />
+                            )}
+                          </div>
                           <div className="min-w-0">
                             <p className="font-bold text-stone-900 truncate">{product.name}</p>
                             <div className="flex items-center gap-2">
@@ -457,7 +485,8 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                             <Edit2 size={14} className="sm:w-4 sm:h-4" />
                           </button>
                           <button 
-                            onClick={() => handleDelete(product.id)} 
+                            type="button"
+                            onClick={() => requestDeleteProduct(product.id)}
                             className="p-1.5 sm:p-2 hover:bg-red-50 rounded-lg text-stone-400 hover:text-red-600 transition-all"
                             title="Eliminar Producto"
                           >
@@ -490,42 +519,42 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
               onSubmit={handleSubmit}
-              className="bg-white w-full max-w-2xl max-h-[90vh] sm:max-h-[95vh] overflow-y-auto rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl p-6 sm:p-8 pb-[calc(env(safe-area-inset-bottom)+24px)] sm:pb-8"
+              className="bg-white w-full max-w-xl max-h-[92vh] sm:max-h-[94vh] overflow-hidden rounded-t-[1.5rem] sm:rounded-2xl shadow-2xl flex flex-col"
             >
-              <div className="flex justify-between items-start mb-6 sm:mb-8">
+              <div className="flex justify-between items-start gap-4 border-b border-stone-100 bg-stone-50/70 px-5 py-4 flex-shrink-0">
                 <div>
-                  <h3 className="text-lg sm:text-2xl font-serif font-bold text-stone-900">
+                  <h3 className="text-base sm:text-lg font-serif font-bold text-stone-900">
                     {editingId ? 'Editar' : 'Nuevo Producto'}
                   </h3>
-                  <p className="text-stone-500 text-[11px] sm:text-sm">Información del inventario.</p>
+                  <p className="text-stone-400 text-[10px] sm:text-xs">Información del inventario.</p>
                 </div>
                 <button onClick={resetForm} type="button" className="p-2 hover:bg-stone-50 rounded-full transition-colors active:bg-stone-100">
-                  <X size={20} className="sm:w-6 sm:h-6" />
+                  <X size={18} />
                 </button>
               </div>
 
-              <div className="space-y-4 sm:space-y-6">
-                <div className="grid grid-cols-2 sm:grid-cols-2 gap-4 sm:gap-6">
-                  <div className="col-span-2 space-y-1.5 sm:space-y-2">
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2 space-y-1">
                     <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Nombre</label>
                     <input 
                       required 
                       value={formData.name} 
                       onChange={e => setFormData({...formData, name: e.target.value})}
-                      className="w-full px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm sm:text-base outline-none"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-100 focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm outline-none font-medium"
                     />
                   </div>
-                  <div className="space-y-1.5 sm:space-y-2">
+                  <div className="space-y-1">
                     <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Categoría</label>
                     <input 
                       required
                       value={formData.category} 
                       onChange={e => setFormData({...formData, category: e.target.value})}
                       placeholder="Ej. café, pulseras..."
-                      className="w-full px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm sm:text-base outline-none"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-100 focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm outline-none font-medium"
                     />
                   </div>
-                  <div className="space-y-1.5 sm:space-y-2">
+                  <div className="space-y-1">
                     <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">SKU</label>
                     <input 
                       value={formData.sku} 
@@ -534,53 +563,53 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                       className="w-full px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs sm:text-sm outline-none"
                     />
                   </div>
-                  <div className="col-span-2 space-y-1.5 sm:space-y-2">
+                  <div className="col-span-2 space-y-1">
                     <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Descripción</label>
                     <textarea 
-                      rows={3}
+                      rows={2}
                       value={formData.description} 
                       onChange={e => setFormData({...formData, description: e.target.value})}
                       placeholder="Ej. Café premium de altura o Pulsera de ojo de tigre resistente..."
-                      className="w-full px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm sm:text-base outline-none resize-none"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-100 focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm outline-none resize-none"
                     />
                   </div>
-                  <div className="space-y-1.5 sm:space-y-2">
+                  <div className="space-y-1">
                     <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Stock Disponible</label>
                     <input 
                       required type="number"
                       value={formData.stock} 
                       onChange={e => setFormData({...formData, stock: e.target.value})}
-                      className="w-full px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm sm:text-base outline-none"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-100 focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm outline-none font-bold"
                     />
                   </div>
-                  <div className="space-y-1.5 sm:space-y-2">
+                  <div className="space-y-1">
                     <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Stock Mínimo (Alerta)</label>
                     <input 
                       required type="number"
                       value={formData.minStock} 
                       onChange={e => setFormData({...formData, minStock: e.target.value})}
-                      className="w-full px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm sm:text-base outline-none"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-100 focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm outline-none font-bold"
                     />
                   </div>
-                  <div className="space-y-1.5 sm:space-y-2">
-                    <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Venta ($)</label>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">P.V.P. ($)</label>
                     <input 
                       required type="number" step="0.01"
                       value={formData.price} 
                       onChange={e => setFormData({...formData, price: e.target.value})}
-                      className="w-full px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm sm:text-base outline-none"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-100 focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm outline-none font-bold"
                     />
                   </div>
-                  <div className="space-y-1.5 sm:space-y-2">
+                  <div className="space-y-1">
                     <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Costo ($)</label>
                     <input 
                       type="number" step="0.01"
                       value={formData.costPrice} 
                       onChange={e => setFormData({...formData, costPrice: e.target.value})}
-                      className="w-full px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm sm:text-base outline-none"
+                      className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-100 focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-sm outline-none font-bold"
                     />
                   </div>
-                  <div className="col-span-2 space-y-1.5 sm:space-y-2">
+                  <div className="col-span-2 space-y-1">
                     <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Estado</label>
                     <div className="flex gap-2">
                       {['active', 'inactive'].map((s) => (
@@ -588,9 +617,9 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                           key={s}
                           type="button"
                           onClick={() => setFormData({...formData, status: s as any})}
-                          className={`flex-1 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all ${
-                            formData.status === s 
-                              ? 'bg-stone-900 text-white border-stone-900' 
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                              formData.status === s 
+                                ? 'bg-stone-900 text-white border-stone-900' 
                               : 'bg-stone-50 text-stone-400 border-stone-100 hover:bg-stone-100'
                           }`}
                         >
@@ -605,7 +634,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                   <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Fotos (Máx 3)</label>
                   <div className="flex flex-wrap gap-3">
                     {previewUrls.map((url, idx) => (
-                      <div key={idx} className="relative w-16 h-16 sm:w-24 sm:h-24 rounded-lg sm:rounded-2xl overflow-hidden border border-stone-100 group">
+                      <div key={idx} className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-lg sm:rounded-xl overflow-hidden border border-stone-100 group">
                         <img src={url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         <button 
                           type="button" 
@@ -617,23 +646,21 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                       </div>
                     ))}
                     {previewUrls.length < 3 && (
-                      <label className="w-16 h-16 sm:w-24 sm:h-24 rounded-lg sm:rounded-2xl border-2 border-dashed border-stone-100 flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors active:bg-stone-50">
+                      <label className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg sm:rounded-xl border-2 border-dashed border-stone-100 flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors active:bg-stone-50">
                         <Plus size={16} className="text-stone-300" />
                         <input type="file" multiple accept="image/*" onChange={handleFileChange} className="hidden" />
                       </label>
                     )}
                   </div>
                 </div>
+              </div>
 
-                <div className="flex gap-3 pt-6 sm:pt-8">
+              <div className="flex-shrink-0 border-t border-stone-100 bg-white px-5 py-3 pb-[calc(env(safe-area-inset-bottom)+12px)] sm:pb-3 flex gap-2">
                   {editingId && (
                     <button 
                       type="button" 
-                      onClick={async () => {
-                        await handleDelete(editingId);
-                        resetForm();
-                      }}
-                      className="py-3 sm:py-4 px-3 rounded-xl sm:rounded-2xl font-bold text-red-500 hover:bg-red-50 transition-colors text-xs sm:text-base flex items-center justify-center gap-1 border border-red-100"
+                      onClick={() => requestDeleteProduct(editingId)}
+                      className="py-2.5 px-3 rounded-xl font-bold text-red-500 hover:bg-red-50 transition-colors text-xs flex items-center justify-center gap-1 border border-red-100"
                       title="Eliminar este producto permanentemente"
                     >
                       <Trash2 size={16} />
@@ -643,21 +670,73 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                   <button 
                     type="button" 
                     onClick={resetForm}
-                    className="flex-1 py-3 sm:py-4 px-4 rounded-xl sm:rounded-2xl font-bold text-stone-500 hover:bg-stone-50 transition-colors text-xs sm:text-base"
+                    className="flex-1 py-2.5 px-4 rounded-xl font-bold text-stone-500 hover:bg-stone-50 transition-colors text-xs border border-stone-100"
                   >
-                    Descartar
+                    Cancelar
                   </button>
                   <button 
                     type="submit"
                     disabled={isUploading}
-                    className="flex-[2] py-3 sm:py-4 px-4 bg-stone-900 text-white rounded-xl sm:rounded-2xl font-bold hover:bg-primary transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-xs sm:text-base"
+                    className="flex-[2] py-2.5 px-4 bg-stone-900 text-white rounded-xl font-bold hover:bg-primary transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-xs"
                   >
                     {isUploading ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                    {isUploading ? '...' : (editingId ? 'Actualizar' : 'Crear Producto')}
+                    {isUploading ? '...' : 'Guardar'}
+                  </button>
+                </div>
+            </motion.form>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isDeleteConfirmOpen && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center bg-stone-950/45 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.96 }}
+              transition={{ duration: 0.18 }}
+              className="w-full max-w-sm overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xl shadow-stone-950/20"
+            >
+              <div className="h-1 bg-red-500" />
+              <div className="p-5">
+                <div className="mb-4 flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+                    <AlertTriangle size={20} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-serif text-lg font-bold text-stone-900">Eliminar producto</h3>
+                    <p className="mt-1 text-sm leading-5 text-stone-500">
+                      Esta acción quitará el producto del inventario. No se podrá ver en la tienda ni en nuevos pedidos.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-stone-100 bg-stone-50 px-3 py-2 text-sm font-bold text-stone-800">
+                  {products.find(product => product.id === deleteTargetId)?.name || 'Producto seleccionado'}
+                </div>
+
+                <div className="mt-5 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDeleteConfirmOpen(false);
+                      setDeleteTargetId(null);
+                    }}
+                    className="flex-1 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-600 transition-colors hover:bg-stone-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmDeleteProduct}
+                    className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-red-700"
+                  >
+                    Eliminar
                   </button>
                 </div>
               </div>
-            </motion.form>
+            </motion.div>
           </div>
         )}
       </AnimatePresence>
