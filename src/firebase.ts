@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 // @ts-ignore
 import firebaseConfig from '../firebase-applet-config.json';
@@ -68,6 +68,29 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
+}
+
+export async function logClientError(
+  error: unknown,
+  context: Record<string, unknown> = {}
+) {
+  try {
+    const currentUser = auth.currentUser;
+    await addDoc(collection(db, 'clientErrorLogs'), {
+      message: error instanceof Error ? error.message : String(error),
+      code: typeof error === 'object' && error !== null && 'code' in error ? String((error as any).code) : null,
+      name: error instanceof Error ? error.name : null,
+      context,
+      userEmail: currentUser?.email || null,
+      userId: currentUser?.uid || null,
+      emailVerified: currentUser?.emailVerified || false,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      url: typeof window !== 'undefined' ? window.location.href : null,
+      createdAt: serverTimestamp(),
+    });
+  } catch (logError) {
+    console.warn('Client error logging failed:', logError);
+  }
 }
 
 // Test connection

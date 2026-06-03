@@ -144,6 +144,12 @@ service cloud.firestore {
              (!('tax' in data) || data.tax == null || (data.tax is number));
     }
 
+    function isValidOrderPaymentEdit() {
+      return isValidOrder(request.resource.data) &&
+             resource.data.companyId == request.resource.data.companyId &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentMethod', 'paymentStatus', 'amountPaid']);
+    }
+
     // Payment Transaction Validator
     function isValidTransaction(data) {
       return hasRequiredFields(data, ['id', 'customerId', 'customerName', 'amount', 'paymentMethod', 'date']) &&
@@ -201,6 +207,21 @@ service cloud.firestore {
              );
     }
 
+    // Client Error Log Validator
+    function isValidClientErrorLog(data) {
+      return hasRequiredFields(data, ['message', 'userEmail', 'createdAt']) &&
+             hasOnlyAllowedFields(data, ['message', 'code', 'name', 'context', 'userEmail', 'userId', 'emailVerified', 'userAgent', 'url', 'createdAt']) &&
+             data.message is string && data.message.size() > 0 && data.message.size() <= 1000 &&
+             (!('code' in data) || data.code == null || (data.code is string && data.code.size() <= 100)) &&
+             (!('name' in data) || data.name == null || (data.name is string && data.name.size() <= 100)) &&
+             (!('context' in data) || data.context == null || data.context is map) &&
+             data.userEmail == request.auth.token.email &&
+             (!('userId' in data) || data.userId == null || data.userId == request.auth.uid) &&
+             (!('emailVerified' in data) || data.emailVerified == null || data.emailVerified is bool) &&
+             (!('userAgent' in data) || data.userAgent == null || (data.userAgent is string && data.userAgent.size() <= 500)) &&
+             (!('url' in data) || data.url == null || (data.url is string && data.url.size() <= 500));
+    }
+
     // ===============================================================
     // Rules for individual collections
     // ===============================================================
@@ -246,7 +267,12 @@ service cloud.firestore {
       allow get: if true;
       allow list: if isAdmin();
       allow create: if isValidOrder(request.resource.data);
-      allow update: if isAdmin() || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['items', 'stock']));
+      allow update: if isAdmin() ||
+                      (
+                        isCompanyMember(resource.data.companyId) &&
+                        isValidOrderPaymentEdit()
+                      ) ||
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['items', 'stock']));
       allow delete: if isAdmin();
     }
 
@@ -280,6 +306,11 @@ service cloud.firestore {
                               request.resource.data.email == roleEmail &&
                               isValidUserRole(request.resource.data);
       allow delete: if isAdmin();
+    }
+
+    match /clientErrorLogs/{logId} {
+      allow create: if isAuthenticated() && isValidClientErrorLog(request.resource.data);
+      allow read, update, delete: if isAdmin();
     }
   }
 }

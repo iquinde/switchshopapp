@@ -1,10 +1,10 @@
 import React from 'react';
 import { 
   Search, Filter, ChevronDown, Check, Truck, CreditCard, Clock, X, 
-  Eye, FileText, Landmark, RefreshCw, BadgeAlert, Trash2, Calendar,
+  Eye, FileText, Landmark, RefreshCw, BadgeAlert, Trash2, Calendar, Edit2,
   Minus, Plus
 } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { db, handleFirestoreError, OperationType, logClientError } from '../firebase';
 import { 
   collection, query, onSnapshot, orderBy, doc, updateDoc, 
   addDoc, serverTimestamp, writeBatch, getDocs, getDoc
@@ -65,6 +65,10 @@ export default function OrdersManager({
   const [payBank, setPayBank] = React.useState('');
   const [payNotes, setPayNotes] = React.useState('');
   const [isSubmittingPayment, setIsSubmittingPayment] = React.useState(false);
+  const [isEditingPaymentMethod, setIsEditingPaymentMethod] = React.useState(false);
+  const [editPaymentMethod, setEditPaymentMethod] = React.useState<'cash' | 'card' | 'transfer' | 'credit'>('cash');
+  const [editPaidAmount, setEditPaidAmount] = React.useState('');
+  const [isUpdatingPaymentMethod, setIsUpdatingPaymentMethod] = React.useState(false);
 
   // Manual order creation
   const [isCreatingOrder, setIsCreatingOrder] = React.useState(false);
@@ -102,6 +106,19 @@ export default function OrdersManager({
     setSelectedCustomer('');
     setIsCustomerPickerOpen(false);
     setIsCreatingOrder(true);
+  };
+
+  const getPaymentStatusFromAmount = (amountPaid: number, total: number): 'unpaid' | 'partially_paid' | 'paid' => {
+    if (amountPaid >= total - 0.01) return 'paid';
+    if (amountPaid <= 0) return 'unpaid';
+    return 'partially_paid';
+  };
+
+  const openEditPaymentMethod = () => {
+    if (!selectedOrder) return;
+    setEditPaymentMethod(selectedOrder.paymentMethod);
+    setEditPaidAmount((selectedOrder.amountPaid || 0).toFixed(2));
+    setIsEditingPaymentMethod(true);
   };
 
   const [isOfflineMode, setIsOfflineMode] = React.useState(getOfflineFallbackActive());
@@ -563,6 +580,96 @@ export default function OrdersManager({
     }
   };
 
+  const handleUpdatePaymentMethod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrder) return;
+
+    const parsedPaidAmount = Math.max(0, parseFloat(editPaidAmount) || 0);
+    if (parsedPaidAmount > selectedOrder.total + 0.01) {
+      alert('El monto pagado no puede superar el total del pedido.');
+      return;
+    }
+
+    const normalizedPaidAmount = Math.min(parsedPaidAmount, selectedOrder.total);
+    const nextPaymentStatus = getPaymentStatusFromAmount(normalizedPaidAmount, selectedOrder.total);
+    const previousCreditDebt = selectedOrder.paymentMethod === 'credit'
+      ? Math.max(0, selectedOrder.total - (selectedOrder.amountPaid || 0))
+      : 0;
+    const nextCreditDebt = editPaymentMethod === 'credit'
+      ? Math.max(0, selectedOrder.total - normalizedPaidAmount)
+      : 0;
+    const debtDelta = nextCreditDebt - previousCreditDebt;
+    const updateData = {
+      paymentMethod: editPaymentMethod,
+      amountPaid: normalizedPaidAmount,
+      paymentStatus: nextPaymentStatus,
+    };
+
+    setIsUpdatingPaymentMethod(true);
+
+    if (getOfflineFallbackActive()) {
+      try {
+        offlineDb.saveOrder({ ...selectedOrder, ...updateData });
+        if (selectedOrder.customerId && selectedOrder.customerId !== 'manual-client' && debtDelta !== 0) {
+          const cust = offlineDb.getCustomers().find(c => c.id === selectedOrder.customerId);
+          if (cust) {
+            offlineDb.saveCustomer({
+              ...cust,
+              currentDebt: Math.max(0, (cust.currentDebt || 0) + debtDelta),
+            });
+          }
+        }
+        setSelectedOrder(prev => prev ? { ...prev, ...updateData } : null);
+        setIsEditingPaymentMethod(false);
+        alert('Metodo de pago actualizado (Modo Local)');
+      } catch (error: any) {
+        alert(error?.message || 'No se pudo actualizar el metodo de pago localmente.');
+      } finally {
+        setIsUpdatingPaymentMethod(false);
+      }
+      return;
+    }
+
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'orders', selectedOrder.id), updateData);
+
+      if (selectedOrder.customerId && selectedOrder.customerId !== 'manual-client' && debtDelta !== 0) {
+        const customerRef = doc(db, 'customers', selectedOrder.customerId);
+        const customerSnap = await getDoc(customerRef);
+        if (customerSnap.exists()) {
+          const currentDebt = customerSnap.data().currentDebt || 0;
+          batch.update(customerRef, {
+            currentDebt: Math.max(0, currentDebt + debtDelta),
+          });
+        }
+      }
+
+      await batch.commit();
+      setSelectedOrder(prev => prev ? { ...prev, ...updateData } : null);
+      setIsEditingPaymentMethod(false);
+      alert('Metodo de pago actualizado');
+    } catch (error) {
+      await logClientError(error, {
+        component: 'OrdersManager',
+        action: 'update_order_payment_method',
+        orderId: selectedOrder.id,
+        companyId,
+        orderCompanyId: selectedOrder.companyId || null,
+        previousPaymentMethod: selectedOrder.paymentMethod,
+        nextPaymentMethod: editPaymentMethod,
+        previousAmountPaid: selectedOrder.amountPaid || 0,
+        nextAmountPaid: normalizedPaidAmount,
+        customerId: selectedOrder.customerId || null,
+        debtDelta,
+      });
+      console.warn("Update payment method failed in cloud:", error);
+      alert('No se pudo actualizar el metodo de pago: ' + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      setIsUpdatingPaymentMethod(false);
+    }
+  };
+
   // Add Item to manual order
   const addManualItem = (prod: Product) => {
     setOrderItems(prev => {
@@ -645,6 +752,7 @@ export default function OrdersManager({
           finalCustomerName = 'Cliente General';
         }
 
+        finalCustomerName = finalCustomerName.trim() || customerSearch.trim() || 'Cliente General';
         const paidAmount = parseFloat(orderPaidAmount) || 0;
         
         // Save Order
@@ -759,6 +867,7 @@ export default function OrdersManager({
         finalCustomerName = 'Cliente General';
       }
 
+      finalCustomerName = finalCustomerName.trim() || customerSearch.trim() || 'Cliente General';
       const paidAmount = parseFloat(orderPaidAmount) || 0;
 
       // New Order Doc
@@ -824,6 +933,20 @@ export default function OrdersManager({
       setOrderPaymentMethod('cash');
       alert('Pedido creado exitosamente');
     } catch (error) {
+      await logClientError(error, {
+        component: 'OrdersManager',
+        action: 'create_manual_order',
+        companyId,
+        targetCompanyId,
+        itemsCount: orderItems.length,
+        productIds: orderItems.map(item => item.product.id),
+        paymentMethod: orderPaymentMethod,
+        paidAmount: parseFloat(orderPaidAmount) || 0,
+        hasInitialPayment: (parseFloat(orderPaidAmount) || 0) > 0,
+        selectedCustomerMode: selectedCustomer || 'general',
+        createsNewCustomer: selectedCustomer === 'new',
+        orderDate,
+      });
       console.warn("Create order failed in cloud, switching to local database storage fallback:", error);
       setOfflineFallbackActive(true);
       try {
@@ -863,6 +986,7 @@ export default function OrdersManager({
           finalCustomerName = 'Cliente General';
         }
 
+        finalCustomerName = finalCustomerName.trim() || customerSearch.trim() || 'Cliente General';
         const paidAmount = parseFloat(orderPaidAmount) || 0;
         const orderRefId = `local-ord-${Date.now()}`;
         offlineDb.saveOrder({
@@ -1255,7 +1379,19 @@ export default function OrdersManager({
 
                 {/* Financial overview */}
                 <div className="space-y-3 bg-stone-50 p-4 rounded-xl border border-stone-100">
-                  <h4 className="text-[10px] uppercase font-bold tracking-wider text-stone-400">Resumen Financiero</h4>
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className="text-[10px] uppercase font-bold tracking-wider text-stone-400">Resumen Financiero</h4>
+                    {selectedOrder.status !== 'cancelled' && (
+                      <button
+                        type="button"
+                        onClick={openEditPaymentMethod}
+                        className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-bold text-stone-600 hover:bg-stone-900 hover:text-white transition-colors"
+                      >
+                        <Edit2 size={12} />
+                        Editar
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between">
                       <span className="text-stone-500 font-medium">Método de registro</span>
@@ -1315,6 +1451,115 @@ export default function OrdersManager({
                 )}
               </div>
             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Payment Method Modal */}
+      <AnimatePresence>
+        {isEditingPaymentMethod && selectedOrder && (
+          <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-sm z-[120] flex items-center justify-center p-4">
+            <motion.form
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              onSubmit={handleUpdatePaymentMethod}
+              className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4"
+            >
+              <div className="flex justify-between items-center border-b border-stone-100 pb-3">
+                <div>
+                  <h3 className="font-serif font-bold text-stone-900 text-base">Editar metodo de pago</h3>
+                  <p className="text-[11px] text-stone-500 mt-0.5">Pedido #{selectedOrder.id.slice(-6).toUpperCase()}</p>
+                </div>
+                <button type="button" onClick={() => setIsEditingPaymentMethod(false)} className="p-1 hover:bg-stone-50 rounded-full text-stone-400">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="bg-stone-50 p-3 rounded-lg border border-stone-100 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-stone-500">Total del pedido:</span>
+                  <span className="font-bold text-stone-900">${selectedOrder.total.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-stone-500">Metodo actual:</span>
+                  <span className="font-bold text-stone-900 capitalize">
+                    {selectedOrder.paymentMethod === 'credit' ? 'Credito' : selectedOrder.paymentMethod}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Metodo correcto</label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { id: 'cash', label: 'Efectivo' },
+                      { id: 'transfer', label: 'Transf.' },
+                      { id: 'card', label: 'Tarjeta' },
+                      { id: 'credit', label: 'Credito' }
+                    ].map(method => (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => {
+                          const nextMethod = method.id as 'cash' | 'card' | 'transfer' | 'credit';
+                          setEditPaymentMethod(nextMethod);
+                          if (nextMethod === 'credit' && selectedOrder.paymentMethod !== 'credit') {
+                            setEditPaidAmount('0.00');
+                          } else if (nextMethod !== 'credit' && selectedOrder.paymentMethod === 'credit' && (parseFloat(editPaidAmount) || 0) === 0) {
+                            setEditPaidAmount(selectedOrder.total.toFixed(2));
+                          }
+                        }}
+                        className={`py-1.5 rounded-lg text-[10px] font-semibold text-center border transition-all ${
+                          editPaymentMethod === method.id
+                            ? 'bg-stone-900 border-stone-900 text-white'
+                            : 'bg-stone-50 text-stone-600 border-stone-100 hover:bg-stone-100'
+                        }`}
+                      >
+                        {method.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Monto pagado</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={selectedOrder.total}
+                    required
+                    value={editPaidAmount}
+                    onChange={e => setEditPaidAmount(e.target.value)}
+                    className="w-full px-3 py-2 border border-stone-100 rounded-xl bg-stone-50 focus:bg-white focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none"
+                  />
+                  {editPaymentMethod === 'credit' && (
+                    <p className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                      Saldo a credito: ${(selectedOrder.total - (parseFloat(editPaidAmount) || 0)).toFixed(2)}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-3 flex gap-2 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingPaymentMethod(false)}
+                  className="flex-1 py-2 font-bold text-stone-500 hover:bg-stone-100 rounded-xl text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingPaymentMethod}
+                  className="flex-[2] py-2 bg-stone-900 hover:bg-primary font-bold text-white rounded-xl text-xs disabled:opacity-50"
+                >
+                  {isUpdatingPaymentMethod ? 'Actualizando...' : 'Guardar cambio'}
+                </button>
+              </div>
+            </motion.form>
           </div>
         )}
       </AnimatePresence>

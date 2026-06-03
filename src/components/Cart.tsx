@@ -2,7 +2,7 @@ import React from 'react';
 import { X, Plus, Minus, ShoppingBag, ArrowLeft, CheckCircle, Smartphone, User, MapPin } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CartItem, Order, Customer } from '../types';
-import { db } from '../firebase';
+import { db, logClientError } from '../firebase';
 import { collection, query, where, getDocs, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import ProductImageFallback from './ProductImageFallback';
 import { isRealProductImage } from '../lib/productImages';
@@ -204,6 +204,17 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
         onClearCart();
       }
     } catch (err) {
+      await logClientError(err, {
+        component: 'Cart',
+        action: 'checkout_submit',
+        targetCompanyId: activeCompanyId || items[0]?.companyId || null,
+        itemsCount: items.length,
+        productIds: items.map(item => item.id),
+        paymentMethod,
+        total,
+        hasCustomerPhone: Boolean(phone.trim()),
+        hasCustomerCedula: Boolean(cedula.trim()),
+      });
       alert('Error al registrar pedido: ' + err);
     } finally {
       setIsSubmitting(false);
