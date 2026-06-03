@@ -12,10 +12,25 @@ import { Product, Company } from '../types';
 import { CloudAlert, Building, Check, Copy } from 'lucide-react';
 import { getOfflineFallbackActive, setOfflineFallbackActive, OFFLINE_CHANGE_EVENT } from '../lib/offlineDb';
 
+const SELECTED_COMPANY_STORAGE_KEY = 'switchshop_selected_company_id';
+const ACTIVE_TAB_STORAGE_KEY = 'switchshop_merchant_active_tab';
+const COMMON_TABS = ['dashboard', 'inventory', 'orders', 'receivables', 'customers', 'settings'];
+const SUPER_ADMIN_TABS = [...COMMON_TABS, 'companies'];
+
+function getDefaultActiveTab(isSuperAdmin: boolean) {
+  return isSuperAdmin ? 'companies' : 'dashboard';
+}
+
+function getInitialActiveTab(isSuperAdmin: boolean) {
+  const storedTab = window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+  const allowedTabs = isSuperAdmin ? SUPER_ADMIN_TABS : COMMON_TABS;
+  return storedTab && allowedTabs.includes(storedTab) ? storedTab : getDefaultActiveTab(isSuperAdmin);
+}
+
 interface MerchantViewProps {
   products: Product[];
   onLogout: () => void;
-  onSwitchToCatalog: () => void;
+  onSwitchToCatalog: (company?: Company | null) => void;
   userCompany?: Company | null;
   companies: Company[];
   isSuperAdmin?: boolean;
@@ -29,7 +44,7 @@ const MerchantView: React.FC<MerchantViewProps> = ({
   companies = [],
   isSuperAdmin = false
 }) => {
-  const [activeTab, setActiveTab] = React.useState(isSuperAdmin ? 'companies' : 'dashboard');
+  const [activeTab, setActiveTab] = React.useState(() => getInitialActiveTab(isSuperAdmin));
   const [isCollapsed, setIsCollapsed] = React.useState(false);
   const [isOfflineMode, setIsOfflineMode] = React.useState(getOfflineFallbackActive());
 
@@ -46,6 +61,9 @@ const MerchantView: React.FC<MerchantViewProps> = ({
 
   // Dropdown filter selected by the user
   const [selectedCompanyId, setSelectedCompanyId] = React.useState<string>(() => {
+    const storedCompanyId = window.localStorage.getItem(SELECTED_COMPANY_STORAGE_KEY);
+    if (storedCompanyId) return storedCompanyId;
+
     const realComps = companies.filter(c => c.id !== 'comp-default');
     const initialList = realComps.length > 0 ? realComps : companies;
     return initialList.length > 0 ? initialList[0].id : 'comp-default';
@@ -61,15 +79,44 @@ const MerchantView: React.FC<MerchantViewProps> = ({
         const exists = list.some(c => c.id === selectedCompanyId);
         if (!exists || selectedCompanyId === 'all') {
           setSelectedCompanyId(list[0].id);
+          window.localStorage.setItem(SELECTED_COMPANY_STORAGE_KEY, list[0].id);
         }
       } else {
         setSelectedCompanyId('comp-default');
+        window.localStorage.removeItem(SELECTED_COMPANY_STORAGE_KEY);
       }
     }
   }, [companies, isSuperAdmin, selectedCompanyId]);
 
+  React.useEffect(() => {
+    if (isSuperAdmin && selectedCompanyId && selectedCompanyId !== 'comp-default' && selectedCompanyId !== 'all') {
+      window.localStorage.setItem(SELECTED_COMPANY_STORAGE_KEY, selectedCompanyId);
+    }
+  }, [isSuperAdmin, selectedCompanyId]);
+
+  React.useEffect(() => {
+    if (activeTab) {
+      window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
+    }
+  }, [activeTab]);
+
+  React.useEffect(() => {
+    const allowedTabs = isSuperAdmin ? SUPER_ADMIN_TABS : COMMON_TABS;
+    if (!allowedTabs.includes(activeTab)) {
+      setActiveTab(getDefaultActiveTab(isSuperAdmin));
+    }
+  }, [activeTab, isSuperAdmin]);
+
   // Derive active companyId
   const currentCompanyId = isSuperAdmin ? selectedCompanyId : (userCompany?.id || 'comp-default');
+  const currentCompany = React.useMemo(() => {
+    if (isSuperAdmin) {
+      return companies.find(c => c.id === currentCompanyId) || null;
+    }
+
+    return userCompany;
+  }, [companies, currentCompanyId, isSuperAdmin, userCompany]);
+  const handleSwitchToCatalog = () => onSwitchToCatalog(currentCompany);
 
   const handleCopyClientUrl = () => {
     if (!userCompany) return;
@@ -116,7 +163,7 @@ const MerchantView: React.FC<MerchantViewProps> = ({
           Manager<span className="text-primary text-[#8b5a2b]">.</span>
         </h1>
         <button
-          onClick={onSwitchToCatalog}
+          onClick={handleSwitchToCatalog}
           className="text-[11px] font-bold text-stone-600 hover:text-stone-900 flex items-center gap-1.5 bg-stone-50 hover:bg-stone-100 border border-stone-200/60 px-3 py-1.5 rounded-xl transition-all"
         >
           <span>Ver Tienda</span>
@@ -127,7 +174,7 @@ const MerchantView: React.FC<MerchantViewProps> = ({
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
         onLogout={onLogout}
-        onSwitchToCatalog={onSwitchToCatalog}
+        onSwitchToCatalog={handleSwitchToCatalog}
         isCollapsed={isCollapsed}
         setIsCollapsed={setIsCollapsed}
         isSuperAdmin={isSuperAdmin}

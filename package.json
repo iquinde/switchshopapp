@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "deploy:dev": "npm run build && firebase hosting:channel:deploy dev",
+    "deploy:dev": "npm run build && npx firebase-tools hosting:channel:deploy dev",
     "deploy:prod": "npm run build && firebase deploy --only hosting"
   },
   "dependencies": {
@@ -32,6 +32,7 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.16",
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",

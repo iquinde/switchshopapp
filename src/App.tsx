@@ -5,6 +5,7 @@ import ProductDetail from './components/ProductDetail';
 import MerchantView from './components/MerchantView';
 import CatalogView from './components/CatalogView';
 import ErrorBoundary from './components/ErrorBoundary';
+import ToastHost from './components/ToastHost';
 import { db, auth, googleProvider } from './firebase';
 import { collection, onSnapshot, query, doc } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
@@ -228,29 +229,27 @@ export default function App() {
     };
   }, [companies, parseCompanyFromUrl]);
 
-  const clearActiveCompany = () => {
-    setActiveCompany(null);
-    const url = new URL(window.location.href);
-    url.searchParams.delete('tienda');
-    url.searchParams.delete('companyId');
-    url.searchParams.delete('c');
-    url.hash = '';
-    
-    const parts = url.pathname.split('/').filter(Boolean);
-    const isCompanyPath = parts.includes('tienda') || parts.some(p => companies.some(c => c.id === p || slugify(c.storeName) === slugify(p)));
-    
-    if (isCompanyPath) {
-      window.history.pushState({}, '', '/');
-    } else {
-      window.history.pushState({}, '', url.pathname + url.search);
-    }
-  };
-
   const openMerchantManager = () => {
     setActiveCompany(null);
     setIsClientStoreRoute(false);
     setIsMerchantMode(true);
     window.history.pushState({}, '', '/');
+  };
+
+  const openCompanyStorefront = (company?: Company | null) => {
+    if (!company || company.id === 'comp-default') {
+      setIsMerchantMode(false);
+      return;
+    }
+
+    const storePath = `/tienda/${slugify(company.storeName)}`;
+    setActiveCompany(company);
+    setIsClientStoreRoute(true);
+    setIsMerchantMode(false);
+    setSelectedProduct(null);
+    setActiveCategory('todos');
+    setSearchTerm('');
+    window.history.pushState({}, '', storePath);
   };
 
   const activeSettings = React.useMemo<StoreSettings>(() => {
@@ -555,46 +554,58 @@ export default function App() {
 
   if (!isAuthReady) {
     return (
-      <div className="min-h-screen bg-stone-950 flex flex-col items-center justify-center p-6 animate-fade-in" id="app-auth-loading-screen">
-        <div className="flex flex-col items-center space-y-4 max-w-sm text-center text-white">
-          <div className="relative w-14 h-14">
-            <div className="absolute inset-0 rounded-full border-4 border-white/15 animate-pulse"></div>
-            <div className="absolute inset-0 rounded-full border-4 border-white border-t-transparent animate-spin"></div>
+      <>
+        <ToastHost />
+        <div className="min-h-screen bg-stone-950 flex flex-col items-center justify-center p-6 animate-fade-in" id="app-auth-loading-screen">
+          <div className="flex flex-col items-center space-y-4 max-w-sm text-center text-white">
+            <div className="relative w-14 h-14">
+              <div className="absolute inset-0 rounded-full border-4 border-white/15 animate-pulse"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-white border-t-transparent animate-spin"></div>
+            </div>
+            <p className="text-white/70 text-sm font-semibold">Verificando acceso...</p>
           </div>
-          <p className="text-white/70 text-sm font-semibold">Verificando acceso...</p>
         </div>
-      </div>
+      </>
     );
   }
 
   if (!user) {
-    return <LoginScreen onLogin={login} isLoggingIn={isLoggingIn} loginError={loginError} />;
+    return (
+      <>
+        <ToastHost />
+        <LoginScreen onLogin={login} isLoggingIn={isLoggingIn} loginError={loginError} />
+      </>
+    );
   }
 
   if (isCompaniesLoading || isSettingsLoading) {
     return (
-      <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-6 animate-fade-in" id="app-loading-screen">
-        <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
-          <div className="relative w-14 h-14">
-            <div className="absolute inset-0 rounded-full border-4 border-stone-200/60 animate-pulse"></div>
-            <div className="absolute inset-0 rounded-full border-4 border-stone-900 border-t-transparent animate-spin"></div>
-          </div>
-          <div className="space-y-1">
-            <p className="text-stone-800 font-semibold text-base animate-pulse">Cargando tienda...</p>
-            <p className="text-stone-400 text-xs font-mono">Espere un momento por favor</p>
+      <>
+        <ToastHost />
+        <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-6 animate-fade-in" id="app-loading-screen">
+          <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
+            <div className="relative w-14 h-14">
+              <div className="absolute inset-0 rounded-full border-4 border-stone-200/60 animate-pulse"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-stone-900 border-t-transparent animate-spin"></div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-stone-800 font-semibold text-base animate-pulse">Cargando tienda...</p>
+              <p className="text-stone-400 text-xs font-mono">Espere un momento por favor</p>
+            </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
   if (isMerchant && isMerchantMode && !isClientStoreRoute) {
     return (
       <ErrorBoundary>
+        <ToastHost />
         <MerchantView 
           products={products} 
           onLogout={logout} 
-          onSwitchToCatalog={() => setIsMerchantMode(false)}
+          onSwitchToCatalog={openCompanyStorefront}
           userCompany={userCompany}
           companies={companies}
           isSuperAdmin={isAdmin}
@@ -605,6 +616,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
+      <ToastHost />
       <div className="min-h-screen bg-white">
         <Navbar 
           cartCount={cartItems.reduce((sum, item) => sum + item.quantity, 0)} 
@@ -653,7 +665,6 @@ export default function App() {
           settings={activeSettings}
           companies={companies}
           activeCompany={activeCompany}
-          onClearActiveCompany={clearActiveCompany}
         />
 
         <Cart 

@@ -481,7 +481,8 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
                                 const reader = new FileReader();
                                 reader.onloadend = () => {
                                   if (typeof reader.result === 'string') {
-                                    setSettings(prev => ({ ...prev, heroImage: reader.result }));
+                                    const imageData = reader.result;
+                                    setSettings(prev => ({ ...prev, heroImage: imageData }));
                                   }
                                 };
                                 reader.readAsDataURL(file);
