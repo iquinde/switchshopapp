@@ -9,9 +9,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "deploy:rules": "firebase deploy --only firestore:rules",
-    "deploy:dev": "npm run build && npx firebase-tools hosting:channel:deploy dev",
-    "deploy:prod": "npm run build && firebase deploy --only hosting"
+    "deploy:rules": "npx firebase-tools deploy --only firestore:rules",
+    "deploy:dev": "npm run build && npm run deploy:rules && npx firebase-tools hosting:channel:deploy dev",
+    "deploy:prod": "npm run build && npm run deploy:rules && npx firebase-tools deploy --only hosting"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

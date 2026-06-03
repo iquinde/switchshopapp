@@ -15,7 +15,7 @@ import { getOfflineFallbackActive, setOfflineFallbackActive, OFFLINE_CHANGE_EVEN
 
 const SELECTED_COMPANY_STORAGE_KEY = 'switchshop_selected_company_id';
 const ACTIVE_TAB_STORAGE_KEY = 'switchshop_merchant_active_tab';
-const COMMON_TABS = ['dashboard', 'inventory', 'orders', 'receivables', 'customers', 'settings'];
+const COMMON_TABS = ['dashboard', 'inventory', 'purchases', 'orders', 'receivables', 'customers', 'settings'];
 const SUPER_ADMIN_TABS = [...COMMON_TABS, 'companies'];
 
 function getDefaultActiveTab(isSuperAdmin: boolean) {

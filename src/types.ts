@@ -84,6 +84,7 @@ export interface Purchase {
   date: any;
   items: PurchaseItem[];
   total: number;
+  historical?: boolean;
   supplier?: string;
   notes?: string;
   createdAt?: any;

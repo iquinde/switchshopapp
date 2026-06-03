@@ -1,6 +1,7 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  AlertTriangle,
   Calendar,
   ClipboardList,
   Edit2,
@@ -20,6 +21,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  where,
   writeBatch
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -36,16 +38,36 @@ interface PurchaseFormItem {
   cost: string;
 }
 
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const isHistoricalPurchase = (purchase?: Purchase | null) => {
+  return Boolean(purchase?.historical);
+};
+
+const parseDateValue = (value: any) => {
+  if (!value) return null;
+
+  if (typeof value === 'string' && DATE_ONLY_PATTERN.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  if (typeof value === 'string') return new Date(value);
+  if (value?.seconds) return new Date(value.seconds * 1000);
+  return new Date(value);
+};
+
 const formatDate = (value: any) => {
-  if (!value) return 'Sin fecha';
-  if (typeof value === 'string') return new Date(value).toLocaleDateString();
-  if (value?.seconds) return new Date(value.seconds * 1000).toLocaleDateString();
-  return new Date(value).toLocaleDateString();
+  const date = parseDateValue(value);
+  if (!date || Number.isNaN(date.getTime())) return 'Sin fecha';
+  return date.toLocaleDateString('es-EC');
 };
 
 const getDateInputValue = (value: any) => {
   if (!value) return new Date().toISOString().slice(0, 10);
-  const date = typeof value === 'string' ? new Date(value) : value?.seconds ? new Date(value.seconds * 1000) : new Date(value);
+  if (typeof value === 'string' && DATE_ONLY_PATTERN.test(value)) return value;
+  const date = parseDateValue(value);
+  if (!date) return new Date().toISOString().slice(0, 10);
   return Number.isNaN(date.getTime()) ? new Date().toISOString().slice(0, 10) : date.toISOString().slice(0, 10);
 };
 
@@ -95,6 +117,7 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
   const [formData, setFormData] = React.useState({
     lot: '',
     date: new Date().toISOString().slice(0, 10),
+    historical: false,
     supplier: '',
     notes: ''
   });
@@ -144,11 +167,16 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
   const total = purchaseItems.reduce((sum, item) => sum + item.total, 0);
 
   React.useEffect(() => {
-    const unsubscribe = onSnapshot(query(collection(db, 'purchases')), (snapshot) => {
+    const purchasesQuery =
+      companyId && companyId !== 'all' && companyId !== 'comp-default'
+        ? query(collection(db, 'purchases'), where('companyId', '==', companyId))
+        : query(collection(db, 'purchases'));
+
+    const unsubscribe = onSnapshot(purchasesQuery, (snapshot) => {
       const data = snapshot.docs.map(item => ({ id: item.id, ...item.data() })) as Purchase[];
       setPurchases(data.sort((a, b) => {
-        const dateA = a.date?.seconds ? a.date.seconds * 1000 : new Date(a.date || a.createdAt || 0).getTime();
-        const dateB = b.date?.seconds ? b.date.seconds * 1000 : new Date(b.date || b.createdAt || 0).getTime();
+        const dateA = parseDateValue(a.date || a.createdAt || 0)?.getTime() || 0;
+        const dateB = parseDateValue(b.date || b.createdAt || 0)?.getTime() || 0;
         return dateB - dateA;
       }));
       setFirebaseError('');
@@ -157,12 +185,13 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
       setFirebaseError(`No se pudo leer compras desde Firebase: ${error.message}`);
     });
     return () => unsubscribe();
-  }, []);
+  }, [companyId]);
 
   const resetForm = () => {
     setFormData({
       lot: '',
       date: new Date().toISOString().slice(0, 10),
+      historical: false,
       supplier: '',
       notes: ''
     });
@@ -177,6 +206,7 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
     setFormData({
       lot: nextLot,
       date: new Date().toISOString().slice(0, 10),
+      historical: false,
       supplier: '',
       notes: ''
     });
@@ -190,6 +220,7 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
     setFormData({
       lot: purchase.lot,
       date: getDateInputValue(purchase.date),
+      historical: isHistoricalPurchase(purchase),
       supplier: purchase.supplier || '',
       notes: purchase.notes || ''
     });
@@ -274,6 +305,7 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
       date: formData.date,
       items: purchaseItems,
       total,
+      historical: formData.historical,
       supplier: formData.supplier.trim() || undefined,
       notes: formData.notes.trim() || undefined,
       companyId: targetCompanyId
@@ -286,14 +318,21 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
         id: purchaseRef.id,
         ...purchaseData,
         createdAt: previousPurchase?.createdAt || serverTimestamp()
-      }, { merge: true });
+      });
 
-      try {
-        await applyCloudStockChanges(previousItems, purchaseItems);
-        alert('Compra guardada exitosamente');
-      } catch (stockError) {
-        console.warn('Purchase saved, but stock update failed', stockError);
-        alert('Compra guardada en la base. No se pudo actualizar el stock por permisos de inventario.');
+      const previousStockItems = isHistoricalPurchase(previousPurchase) ? [] : previousItems;
+      const nextStockItems = formData.historical ? [] : purchaseItems;
+
+      if (previousStockItems.length > 0 || nextStockItems.length > 0) {
+        try {
+          await applyCloudStockChanges(previousStockItems, nextStockItems);
+          alert(formData.historical ? 'Compra guardada como historica. No se sumo al inventario.' : 'Compra guardada exitosamente');
+        } catch (stockError) {
+          console.warn('Purchase saved, but stock update failed', stockError);
+          alert('Compra guardada en la base. No se pudo actualizar el stock por permisos de inventario.');
+        }
+      } else {
+        alert('Compra guardada como historica. No se sumo al inventario.');
       }
 
       resetForm();
@@ -317,7 +356,9 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
       await batch.commit();
 
       try {
-        await applyCloudStockChanges(items, []);
+        if (!isHistoricalPurchase(purchase)) {
+          await applyCloudStockChanges(items, []);
+        }
       } catch (stockError) {
         console.warn('Purchase deleted, but stock restore failed', stockError);
         alert('Compra eliminada. No se pudo descontar el stock por permisos de inventario.');
@@ -344,12 +385,8 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
   const availableSummaryYears = React.useMemo(() => {
     const years = new Set<number>([new Date().getFullYear()]);
     purchases.filter(matchesActiveCompany).forEach(purchase => {
-      const date = typeof purchase.date === 'string'
-        ? new Date(purchase.date)
-        : purchase.date?.seconds
-          ? new Date(purchase.date.seconds * 1000)
-          : new Date(purchase.date || purchase.createdAt);
-      if (!Number.isNaN(date.getTime())) {
+      const date = parseDateValue(purchase.date || purchase.createdAt);
+      if (date && !Number.isNaN(date.getTime())) {
         years.add(date.getFullYear());
       }
     });
@@ -357,12 +394,8 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
   }, [matchesActiveCompany, purchases]);
 
   const summaryPurchases = filteredPurchases.filter(purchase => {
-    const date = typeof purchase.date === 'string'
-      ? new Date(purchase.date)
-      : purchase.date?.seconds
-        ? new Date(purchase.date.seconds * 1000)
-        : new Date(purchase.date || purchase.createdAt);
-    return !Number.isNaN(date.getTime()) && date.getFullYear() === summaryYear;
+    const date = parseDateValue(purchase.date || purchase.createdAt);
+    return Boolean(date && !Number.isNaN(date.getTime()) && date.getFullYear() === summaryYear);
   });
 
   const totalInvested = summaryPurchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
@@ -537,11 +570,48 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
                   <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Lote</label>
                   <input required value={formData.lot} onChange={e => setFormData({ ...formData, lot: e.target.value })} className="w-full px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs sm:text-sm outline-none" />
                 </div>
-                <div className="space-y-1.5 sm:space-y-2">
-                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Fecha</label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={15} />
-                    <input type="date" required value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="w-full pl-9 pr-3 py-2 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-xs sm:text-sm outline-none" />
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Fecha</label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={15} />
+                      <input type="date" required value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="w-full pl-9 pr-3 py-2 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all text-xs sm:text-sm outline-none" />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest whitespace-nowrap">Histórico</p>
+                    <div className="flex h-10 sm:h-12 items-center gap-2 rounded-xl sm:rounded-2xl bg-stone-50 px-3">
+                      <span className="grid h-5 w-5 place-items-center">
+                        <AlertTriangle
+                          size={16}
+                          className={`text-amber-600 transition-opacity ${
+                            formData.historical ? 'opacity-100' : 'opacity-0'
+                          }`}
+                          aria-label="Compra historica: no suma stock"
+                        />
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={formData.historical}
+                        onClick={() => {
+                          if (!formData.historical) {
+                            alert('Esta compra se guardara como historica y no sumara unidades al stock del inventario.');
+                          }
+                          setFormData(prev => ({ ...prev, historical: !prev.historical }));
+                        }}
+                        className={`relative h-6 w-11 rounded-full transition-colors ${
+                          formData.historical ? 'bg-amber-500' : 'bg-stone-300'
+                        }`}
+                        title="Marcar como compra historica"
+                      >
+                        <span
+                          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                            formData.historical ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
