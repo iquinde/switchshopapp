@@ -7,13 +7,14 @@ import {
 import { db, handleFirestoreError, OperationType, logClientError } from '../firebase';
 import { 
   collection, query, onSnapshot, orderBy, doc, updateDoc, 
-  addDoc, serverTimestamp, writeBatch, getDocs, getDoc
+  addDoc, serverTimestamp, writeBatch, getDocs, getDoc, where
 } from 'firebase/firestore';
-import { Order, Product, Customer, PaymentTransaction } from '../types';
+import { Order, Product, Customer, PaymentTransaction, ShippingRate } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive, OFFLINE_CHANGE_EVENT } from '../lib/offlineDb';
 import ProductImageFallback from './ProductImageFallback';
 import { isRealProductImage } from '../lib/productImages';
+import { findLogisticsLocation, logisticsLocations } from '../data/ciudades';
 
 interface OrdersManagerProps {
   products: Product[];
@@ -32,6 +33,7 @@ export default function OrdersManager({
 }: OrdersManagerProps) {
   const [orders, setOrders] = React.useState<Order[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
+  const [shippingRates, setShippingRates] = React.useState<ShippingRate[]>([]);
   const [selectedOrder, setSelectedOrder] = React.useState<Order | null>(null);
 
   const matchesActiveCompany = React.useCallback((record: { companyId?: string }) => {
@@ -81,6 +83,9 @@ export default function OrdersManager({
   const [orderItems, setOrderItems] = React.useState<{ product: Product; quantity: number }[]>([]);
   const [orderPaymentMethod, setOrderPaymentMethod] = React.useState<'cash' | 'card' | 'transfer' | 'credit'>('cash');
   const [orderPaidAmount, setOrderPaidAmount] = React.useState('');
+  const [orderShippingLocationId, setOrderShippingLocationId] = React.useState('');
+  const [orderShippingCost, setOrderShippingCost] = React.useState('0');
+  const [applyShippingCost, setApplyShippingCost] = React.useState(true);
   const [isSubmittingOrder, setIsSubmittingOrder] = React.useState(false);
 
   const filteredCustomerOptions = React.useMemo(() => {
@@ -100,13 +105,59 @@ export default function OrdersManager({
     return companyCustomers.find(customer => customer.id === selectedCustomer);
   }, [companyCustomers, selectedCustomer]);
 
+  const manualSubtotal = orderItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
+  const manualShippingCost = applyShippingCost ? Math.max(0, parseFloat(orderShippingCost) || 0) : 0;
+  const manualTotal = manualSubtotal + manualShippingCost;
+
+  const shippingOptions = React.useMemo(() => {
+    if (shippingRates.length > 0) {
+      return shippingRates.map(rate => ({
+        locationId: rate.locationId,
+        label: rate.locationLabel,
+        cost: rate.cost,
+      }));
+    }
+
+    return logisticsLocations.slice(0, 80).map(location => ({
+      locationId: location.id,
+      label: location.label,
+      cost: 0,
+    }));
+  }, [shippingRates]);
+
   const openCreateOrder = () => {
     setOrderDate(new Date().toISOString().slice(0, 10));
     setCustomerSearch('');
     setSelectedCustomer('');
+    setOrderShippingLocationId('');
+    setOrderShippingCost('0');
+    setApplyShippingCost(true);
     setIsCustomerPickerOpen(false);
     setIsCreatingOrder(true);
   };
+
+  const applyShippingLocation = React.useCallback((locationId: string, shouldApplyCost = applyShippingCost) => {
+    const rate = shippingRates.find(item => item.locationId === locationId);
+    const nextCost = shouldApplyCost && rate ? rate.cost : 0;
+    setOrderShippingLocationId(locationId);
+    setOrderShippingCost(nextCost.toString());
+    if (orderPaymentMethod !== 'credit') {
+      setOrderPaidAmount((manualSubtotal + nextCost).toString());
+    }
+  }, [applyShippingCost, manualSubtotal, orderPaymentMethod, shippingRates]);
+
+  React.useEffect(() => {
+    if (selectedCustomer && selectedCustomer !== 'new' && selectedCustomerData && !selectedCustomerData.logisticsLocationId) {
+      setOrderShippingLocationId('');
+      setOrderShippingCost('0');
+      if (orderPaymentMethod !== 'credit') {
+        setOrderPaidAmount(manualSubtotal.toString());
+      }
+      return;
+    }
+    if (!selectedCustomerData?.logisticsLocationId) return;
+    applyShippingLocation(selectedCustomerData.logisticsLocationId, applyShippingCost);
+  }, [applyShippingCost, applyShippingLocation, manualSubtotal, orderPaymentMethod, selectedCustomer, selectedCustomerData]);
 
   const getPaymentStatusFromAmount = (amountPaid: number, total: number): 'unpaid' | 'partially_paid' | 'paid' => {
     if (amountPaid >= total - 0.01) return 'paid';
@@ -126,6 +177,22 @@ export default function OrdersManager({
   React.useEffect(() => {
     setOrderItems(prev => prev.filter(item => matchesActiveCompany(item.product)));
   }, [matchesActiveCompany]);
+
+  React.useEffect(() => {
+    const targetCompanyId = companyId === 'all' ? 'comp-default' : companyId;
+    const ratesQuery = query(collection(db, 'shippingRates'), where('companyId', '==', targetCompanyId));
+    const unsubscribe = onSnapshot(ratesQuery, (snapshot) => {
+      const rates = snapshot.docs
+        .map(rateDoc => ({ id: rateDoc.id, ...rateDoc.data() } as ShippingRate))
+        .sort((a, b) => a.locationLabel.localeCompare(b.locationLabel));
+      setShippingRates(rates);
+    }, (error) => {
+      console.warn('Firestore shipping rates subscription failed', error);
+      setShippingRates([]);
+    });
+
+    return () => unsubscribe();
+  }, [companyId]);
 
   React.useEffect(() => {
     const handleSync = () => {
@@ -713,11 +780,13 @@ export default function OrdersManager({
     setIsSubmittingOrder(true);
     const targetCompanyId = companyId === 'all' ? 'comp-default' : companyId;
     const orderCreatedAt = new Date(`${orderDate}T12:00:00`).toISOString();
+    const shippingCost = applyShippingCost ? Math.max(0, parseFloat(orderShippingCost) || 0) : 0;
+    const selectedShippingLocation = findLogisticsLocation(orderShippingLocationId);
 
     if (getOfflineFallbackActive()) {
       try {
         const subtotal = orderItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
-        const total = subtotal;
+        const total = subtotal + shippingCost;
 
         let finalCustomerId = selectedCustomer;
         let finalCustomerName = '';
@@ -764,6 +833,11 @@ export default function OrdersManager({
             quantity: item.quantity
           })),
           subtotal,
+          shippingCost,
+          shippingLocationCode: selectedShippingLocation?.id,
+          shippingLocationName: selectedShippingLocation?.label,
+          shippingProvince: selectedShippingLocation?.province,
+          shippingCanton: selectedShippingLocation?.canton,
           total,
           status: 'pending',
           dispatchStatus: 'pending',
@@ -806,6 +880,9 @@ export default function OrdersManager({
         setNewCustomerPhone('');
         setOrderItems([]);
         setOrderPaidAmount('');
+        setOrderShippingLocationId('');
+        setOrderShippingCost('0');
+        setApplyShippingCost(true);
         setIsCreatingOrder(false);
         alert('Pedido registrado exitosamente (Modo Local)');
       } catch (err: any) {
@@ -821,7 +898,7 @@ export default function OrdersManager({
       
       // Calculate totals
       const subtotal = orderItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
-      const total = subtotal;
+      const total = subtotal + shippingCost;
 
       // Handle Customer reference
       let finalCustomerId = selectedCustomer;
@@ -879,6 +956,11 @@ export default function OrdersManager({
           quantity: item.quantity
         })),
         subtotal,
+        shippingCost,
+        shippingLocationCode: selectedShippingLocation?.id,
+        shippingLocationName: selectedShippingLocation?.label,
+        shippingProvince: selectedShippingLocation?.province,
+        shippingCanton: selectedShippingLocation?.canton,
         total,
         status: 'pending',
         dispatchStatus: 'pending',
@@ -930,6 +1012,9 @@ export default function OrdersManager({
       setNewCustomerName('');
       setNewCustomerPhone('');
       setOrderPaidAmount('');
+      setOrderShippingLocationId('');
+      setOrderShippingCost('0');
+      setApplyShippingCost(true);
       setOrderPaymentMethod('cash');
       alert('Pedido creado exitosamente');
     } catch (error) {
@@ -951,7 +1036,7 @@ export default function OrdersManager({
       setOfflineFallbackActive(true);
       try {
         const subtotal = orderItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
-        const total = subtotal;
+        const total = subtotal + shippingCost;
 
         let finalCustomerId = selectedCustomer;
         let finalCustomerName = '';
@@ -996,6 +1081,11 @@ export default function OrdersManager({
             quantity: item.quantity
           })),
           subtotal,
+          shippingCost,
+          shippingLocationCode: selectedShippingLocation?.id,
+          shippingLocationName: selectedShippingLocation?.label,
+          shippingProvince: selectedShippingLocation?.province,
+          shippingCanton: selectedShippingLocation?.canton,
           total,
           status: 'pending',
           dispatchStatus: 'pending',
@@ -1037,6 +1127,9 @@ export default function OrdersManager({
         setNewCustomerName('');
         setNewCustomerPhone('');
         setOrderPaidAmount('');
+        setOrderShippingLocationId('');
+        setOrderShippingCost('0');
+        setApplyShippingCost(true);
         setOrderPaymentMethod('cash');
         alert('Pedido creado exitosamente (Modo Local Activo)');
       } catch (fErr) {
@@ -1063,8 +1156,6 @@ export default function OrdersManager({
       default: return 'bg-amber-100 text-amber-700';
     }
   };
-
-  const manualSubtotal = orderItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
 
   return (
     <div className="space-y-6">
@@ -1262,6 +1353,18 @@ export default function OrdersManager({
                       </div>
                     )}
                   </div>
+                  {(selectedOrder.shippingCost || selectedOrder.shippingLocationName) && (
+                    <div className="rounded-xl bg-white border border-stone-100 p-3 text-xs text-stone-700">
+                      <div className="flex items-start gap-2">
+                        <Truck size={15} className="text-stone-400 mt-0.5 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[10px] text-stone-400 font-semibold mb-0.5">Envio</p>
+                          <p className="font-bold text-stone-900 truncate">{selectedOrder.shippingLocationName || 'Sin destino registrado'}</p>
+                          <p className="text-[11px] text-stone-500 mt-1">Costo: ${(selectedOrder.shippingCost || 0).toFixed(2)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Warning and Direct Action Section */}
                   {(isCustomerPending || customerNotFound) && (
@@ -1399,6 +1502,14 @@ export default function OrdersManager({
                         <CreditCard size={12} />
                         {selectedOrder.paymentMethod === 'credit' ? 'Cuentas por cobrar (Crédito)' : selectedOrder.paymentMethod}
                       </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-stone-500 font-medium">Subtotal productos</span>
+                      <span className="font-bold text-stone-900">${selectedOrder.subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-stone-500 font-medium">Envio</span>
+                      <span className="font-bold text-stone-900">${(selectedOrder.shippingCost || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-stone-500 font-medium">Total de orden</span>
@@ -1761,6 +1872,11 @@ export default function OrdersManager({
                             onClick={() => {
                               setSelectedCustomer('');
                               setCustomerSearch('Cliente Casual');
+                              setOrderShippingLocationId('');
+                              setOrderShippingCost('0');
+                              if (orderPaymentMethod !== 'credit') {
+                                setOrderPaidAmount(manualSubtotal.toString());
+                              }
                               setIsCustomerPickerOpen(false);
                             }}
                             className="w-full px-3 py-2 text-left text-xs font-semibold text-stone-600 hover:bg-stone-50 border-b border-stone-50"
@@ -1775,6 +1891,11 @@ export default function OrdersManager({
                                 setNewCustomerName(customerSearch);
                               }
                               setCustomerSearch('Crear nuevo cliente');
+                              setOrderShippingLocationId('');
+                              setOrderShippingCost('0');
+                              if (orderPaymentMethod !== 'credit') {
+                                setOrderPaidAmount(manualSubtotal.toString());
+                              }
                               setIsCustomerPickerOpen(false);
                             }}
                             className="w-full px-3 py-2 text-left text-xs font-bold text-primary hover:bg-primary/5 border-b border-stone-50"
@@ -1929,9 +2050,82 @@ export default function OrdersManager({
                   )}
                 </div>
 
-                {/* Step 3: Payment Type & Method */}
+                {/* Step 3: Shipping */}
+                <div className="space-y-3 pt-3 border-t border-stone-100">
+                  <h4 className="text-[10px] font-bold text-stone-400 tracking-wider uppercase">3. Logistica de Envio</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-stone-400 font-bold uppercase block">Destino</label>
+                      <select
+                        value={orderShippingLocationId}
+                        onChange={e => {
+                          applyShippingLocation(e.target.value);
+                        }}
+                        className="w-full px-3 py-2 border border-stone-100 rounded-xl bg-stone-50 focus:bg-white text-xs font-bold text-stone-700 outline-none"
+                      >
+                        <option value="">Sin envio / Retiro</option>
+                        {shippingOptions.map(option => (
+                          <option key={option.locationId} value={option.locationId}>
+                            {option.label}{option.cost > 0 ? ` - $${option.cost.toFixed(2)}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {shippingRates.length === 0 && (
+                        <p className="text-[10px] text-amber-600 font-semibold">Configura tarifas en Logistica para aplicar costos automaticamente.</p>
+                      )}
+                      {selectedCustomerData?.city && (
+                        <p className="text-[10px] text-primary font-semibold">Ciudad del cliente: {selectedCustomerData.province ? `${selectedCustomerData.province} / ${selectedCustomerData.city}` : selectedCustomerData.city}</p>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-stone-400 font-bold uppercase block">Costo</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={orderShippingCost}
+                        disabled={!applyShippingCost}
+                        onChange={e => {
+                          setOrderShippingCost(e.target.value);
+                          if (orderPaymentMethod !== 'credit') {
+                            setOrderPaidAmount((manualSubtotal + (parseFloat(e.target.value) || 0)).toString());
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-stone-100 rounded-xl bg-stone-50 focus:bg-white text-xs font-bold text-stone-700 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+                  <label className="flex items-start gap-2 rounded-xl bg-stone-50 border border-stone-100 px-3 py-2 text-[11px] font-bold text-stone-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!applyShippingCost}
+                      onChange={e => {
+                        const shouldApply = !e.target.checked;
+                        setApplyShippingCost(shouldApply);
+                        const nextCost = shouldApply
+                          ? (shippingRates.find(item => item.locationId === orderShippingLocationId)?.cost || Math.max(0, parseFloat(orderShippingCost) || 0))
+                          : 0;
+                        setOrderShippingCost(nextCost.toString());
+                        if (orderPaymentMethod !== 'credit') {
+                          setOrderPaidAmount((manualSubtotal + nextCost).toString());
+                        }
+                      }}
+                      className="mt-0.5 h-4 w-4 rounded border-stone-300 text-stone-900 focus:ring-primary"
+                    />
+                    <span>No aplicar costo de envio a este pedido</span>
+                  </label>
+                  <div className="rounded-xl bg-stone-50 border border-stone-100 px-3 py-2 text-[11px] font-semibold text-stone-600">
+                    Productos: <span className="font-bold text-stone-900">${manualSubtotal.toFixed(2)}</span>
+                    <span className="mx-2 text-stone-300">+</span>
+                    Envio: <span className="font-bold text-stone-900">${manualShippingCost.toFixed(2)}</span>
+                    <span className="mx-2 text-stone-300">=</span>
+                    Total: <span className="font-bold text-stone-950">${manualTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Step 4: Payment Type & Method */}
                 <div className="space-y-4 pt-3 border-t border-stone-100">
-                  <h4 className="text-[10px] font-bold text-stone-400 tracking-wider uppercase">3. Forma de Pago y Créditos</h4>
+                  <h4 className="text-[10px] font-bold text-stone-400 tracking-wider uppercase">4. Forma de Pago y Creditos</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-[10px] text-stone-400 font-bold uppercase block">Método de Venta</label>
@@ -1948,7 +2142,7 @@ export default function OrdersManager({
                             onClick={() => {
                               setOrderPaymentMethod(m.id as any);
                               if (m.id !== 'credit') {
-                                setOrderPaidAmount(manualSubtotal.toString());
+                                setOrderPaidAmount(manualTotal.toString());
                               } else {
                                 setOrderPaidAmount('0');
                               }
@@ -1971,15 +2165,15 @@ export default function OrdersManager({
                         type="number"
                         step="0.01"
                         placeholder="Monto"
-                        max={manualSubtotal}
+                        max={manualTotal}
                         value={orderPaidAmount}
                         onChange={e => setOrderPaidAmount(e.target.value)}
                         className="w-full px-3 py-1.5 border border-stone-100 rounded-xl bg-stone-50 focus:bg-white text-xs font-bold outline-none"
                       />
                       <div className="text-[10px] text-stone-500 font-semibold">
-                        Suma del pedido: <span className="font-bold text-stone-900">${manualSubtotal.toFixed(2)}</span>
+                        Suma del pedido: <span className="font-bold text-stone-900">${manualTotal.toFixed(2)}</span>
                         {orderPaymentMethod === 'credit' && (
-                          <span className="block text-red-500 mt-0.5">Pendiente por cobrar: ${(manualSubtotal - (parseFloat(orderPaidAmount) || 0)).toFixed(2)}</span>
+                          <span className="block text-red-500 mt-0.5">Pendiente por cobrar: ${(manualTotal - (parseFloat(orderPaidAmount) || 0)).toFixed(2)}</span>
                         )}
                       </div>
                     </div>

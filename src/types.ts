@@ -26,6 +26,9 @@ export interface Customer {
   phone?: string;
   cedula?: string; // ID / Identification card
   address?: string;
+  logisticsLocationId?: string;
+  city?: string;
+  province?: string;
   totalSpent?: number;
   lastPurchase?: any;
   creditLimit?: number;
@@ -39,6 +42,11 @@ export interface Order {
   items: CartItem[];
   total: number;
   subtotal: number;
+  shippingCost?: number;
+  shippingLocationCode?: string;
+  shippingLocationName?: string;
+  shippingProvince?: string;
+  shippingCanton?: string;
   tax?: number;
   discount?: number;
   status: 'pending' | 'dispatched' | 'completed' | 'cancelled';
@@ -53,6 +61,30 @@ export interface Order {
   createdAt: any;
   notes?: string;
   companyId?: string; // Links order to a specific company
+}
+
+export interface LogisticsLocation {
+  id: string;
+  provinceCode: string;
+  province: string;
+  cantonCode: string;
+  canton: string;
+  parishCode: string;
+  parish: string;
+  label: string;
+}
+
+export interface ShippingRate {
+  id: string;
+  companyId: string;
+  locationId: string;
+  locationLabel: string;
+  province: string;
+  canton: string;
+  parish: string;
+  cost: number;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 export interface PaymentTransaction {

@@ -9,10 +9,14 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   LogOut,
   Store,
   Receipt,
-  Building2
+  Building2,
+  FileWarning,
+  ShieldCheck,
+  Truck
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -35,14 +39,21 @@ const Sidebar: React.FC<SidebarProps> = ({
   setIsCollapsed,
   isSuperAdmin = false
 }) => {
+  const [isSystemMenuOpen, setIsSystemMenuOpen] = React.useState(false);
+  const systemMenuItems = [
+    { id: 'system-company', label: 'Empresa', icon: Building2 },
+    { id: 'system-users', label: 'Usuarios', icon: ShieldCheck },
+    { id: 'system-error-logs', label: 'Log de Errores', icon: FileWarning },
+  ];
+  const isSystemActive = systemMenuItems.some(item => item.id === activeTab) || activeTab === 'companies';
   const menuItems = [
     { id: 'dashboard', label: 'Inicio', icon: LayoutDashboard },
     { id: 'inventory', label: 'Inventario', icon: Package },
     { id: 'purchases', label: 'Compras', icon: PackagePlus },
     { id: 'orders', label: 'Pedidos', icon: History },
+    { id: 'logistics', label: 'Logistica', icon: Truck },
     { id: 'receivables', label: 'Cartera', icon: Receipt },
     { id: 'customers', label: 'Clientes', icon: Users },
-    ...(isSuperAdmin ? [{ id: 'companies', label: 'Empresas', icon: Building2 }] : []),
     { id: 'settings', label: 'Configuración', icon: Settings },
   ];
 
@@ -95,6 +106,59 @@ const Sidebar: React.FC<SidebarProps> = ({
             )}
           </button>
         ))}
+        {isSuperAdmin && (
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={() => setIsSystemMenuOpen(open => !open)}
+              className={`w-full flex items-center p-3 rounded-xl transition-all ${
+                isSystemActive 
+                  ? 'bg-primary/10 text-primary font-bold' 
+                  : 'text-stone-500 hover:bg-stone-50'
+              }`}
+            >
+              <Building2 size={22} className={isSystemActive ? 'text-primary' : 'text-stone-400'} />
+              {!isCollapsed && (
+                <>
+                  <motion.span 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="ml-3 text-sm flex-1 text-left"
+                  >
+                    Sistema
+                  </motion.span>
+                  {isSystemMenuOpen ? (
+                    <ChevronDown size={16} className="text-current opacity-70" />
+                  ) : (
+                    <ChevronRight size={16} className="text-current opacity-70" />
+                  )}
+                </>
+              )}
+            </button>
+            {!isCollapsed && isSystemMenuOpen && (
+              <div className="ml-5 border-l border-stone-100 pl-3 space-y-1">
+                {systemMenuItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setIsSystemMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                      activeTab === item.id || (activeTab === 'companies' && item.id === 'system-company')
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-stone-400 hover:bg-stone-50 hover:text-stone-700'
+                    }`}
+                  >
+                    <item.icon size={15} />
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </nav>
 
       {/* Footer Actions */}

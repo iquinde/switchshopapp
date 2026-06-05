@@ -9,9 +9,10 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "seed:cities": "node scripts/seed-logistics-locations.mjs",
     "deploy:rules": "npx firebase-tools deploy --only firestore:rules",
-    "deploy:dev": "npm run build && npm run deploy:rules && npx firebase-tools hosting:channel:deploy dev",
-    "deploy:prod": "npm run build && npm run deploy:rules && npx firebase-tools deploy --only hosting"
+    "deploy:dev": "npm run build && npm run deploy:rules && npm run seed:cities && npx firebase-tools hosting:channel:deploy dev",
+    "deploy:prod": "npm run build && npm run deploy:rules && npm run seed:cities && npx firebase-tools deploy --only hosting"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -21,6 +22,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.11.0",
+    "firebase-admin": "^13.10.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.0",

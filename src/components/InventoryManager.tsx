@@ -39,7 +39,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
   const [previewUrls, setPreviewUrls] = React.useState<string[]>([]);
   const [existingImages, setExistingImages] = React.useState<string[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
-  const [activeFilter, setActiveFilter] = React.useState<'Todos' | 'Bajo Stock' | 'Inactivos'>('Todos');
+  const [activeFilter, setActiveFilter] = React.useState< 'Activos' | 'Todos' | 'Bajo Stock' | 'Inactivos'>('Activos');
   const [alertPercentage, setAlertPercentage] = React.useState(20);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = React.useState(false);
   const [deleteTargetId, setDeleteTargetId] = React.useState<string | null>(null);
@@ -313,6 +313,10 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                           p.sku?.toLowerCase().includes(searchTerm.toLowerCase());
     if (!matchesSearch) return false;
     
+    if (activeFilter === 'Activos') {
+      return p.status === 'active';
+    }
+
     if (activeFilter === 'Bajo Stock') {
       const minVal = p.minStock ?? 10;
       const threshold = minVal * (1 + alertPercentage / 100);
@@ -358,7 +362,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
             <div className="space-y-3">
               <h4 className="text-[10px] uppercase tracking-widest text-stone-400 font-bold">Filtros</h4>
               <div className="flex flex-wrap sm:flex-col gap-2">
-                {(['Todos', 'Bajo Stock', 'Inactivos'] as const).map(f => (
+                {(['Activos', 'Todos', 'Bajo Stock', 'Inactivos'] as const).map(f => (
                   <button 
                     key={f} 
                     onClick={() => setActiveFilter(f)}
