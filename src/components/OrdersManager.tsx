@@ -85,6 +85,7 @@ export default function OrdersManager({
   const [orderPaidAmount, setOrderPaidAmount] = React.useState('');
   const [orderShippingLocationId, setOrderShippingLocationId] = React.useState('');
   const [orderShippingCost, setOrderShippingCost] = React.useState('0');
+  const [applyShippingCost, setApplyShippingCost] = React.useState(true);
   const [isSubmittingOrder, setIsSubmittingOrder] = React.useState(false);
 
   const filteredCustomerOptions = React.useMemo(() => {
@@ -103,6 +104,10 @@ export default function OrdersManager({
   const selectedCustomerData = React.useMemo(() => {
     return companyCustomers.find(customer => customer.id === selectedCustomer);
   }, [companyCustomers, selectedCustomer]);
+
+  const manualSubtotal = orderItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
+  const manualShippingCost = applyShippingCost ? Math.max(0, parseFloat(orderShippingCost) || 0) : 0;
+  const manualTotal = manualSubtotal + manualShippingCost;
 
   const shippingOptions = React.useMemo(() => {
     if (shippingRates.length > 0) {
@@ -126,9 +131,33 @@ export default function OrdersManager({
     setSelectedCustomer('');
     setOrderShippingLocationId('');
     setOrderShippingCost('0');
+    setApplyShippingCost(true);
     setIsCustomerPickerOpen(false);
     setIsCreatingOrder(true);
   };
+
+  const applyShippingLocation = React.useCallback((locationId: string, shouldApplyCost = applyShippingCost) => {
+    const rate = shippingRates.find(item => item.locationId === locationId);
+    const nextCost = shouldApplyCost && rate ? rate.cost : 0;
+    setOrderShippingLocationId(locationId);
+    setOrderShippingCost(nextCost.toString());
+    if (orderPaymentMethod !== 'credit') {
+      setOrderPaidAmount((manualSubtotal + nextCost).toString());
+    }
+  }, [applyShippingCost, manualSubtotal, orderPaymentMethod, shippingRates]);
+
+  React.useEffect(() => {
+    if (selectedCustomer && selectedCustomer !== 'new' && selectedCustomerData && !selectedCustomerData.logisticsLocationId) {
+      setOrderShippingLocationId('');
+      setOrderShippingCost('0');
+      if (orderPaymentMethod !== 'credit') {
+        setOrderPaidAmount(manualSubtotal.toString());
+      }
+      return;
+    }
+    if (!selectedCustomerData?.logisticsLocationId) return;
+    applyShippingLocation(selectedCustomerData.logisticsLocationId, applyShippingCost);
+  }, [applyShippingCost, applyShippingLocation, manualSubtotal, orderPaymentMethod, selectedCustomer, selectedCustomerData]);
 
   const getPaymentStatusFromAmount = (amountPaid: number, total: number): 'unpaid' | 'partially_paid' | 'paid' => {
     if (amountPaid >= total - 0.01) return 'paid';
@@ -751,7 +780,7 @@ export default function OrdersManager({
     setIsSubmittingOrder(true);
     const targetCompanyId = companyId === 'all' ? 'comp-default' : companyId;
     const orderCreatedAt = new Date(`${orderDate}T12:00:00`).toISOString();
-    const shippingCost = Math.max(0, parseFloat(orderShippingCost) || 0);
+    const shippingCost = applyShippingCost ? Math.max(0, parseFloat(orderShippingCost) || 0) : 0;
     const selectedShippingLocation = findLogisticsLocation(orderShippingLocationId);
 
     if (getOfflineFallbackActive()) {
@@ -853,6 +882,7 @@ export default function OrdersManager({
         setOrderPaidAmount('');
         setOrderShippingLocationId('');
         setOrderShippingCost('0');
+        setApplyShippingCost(true);
         setIsCreatingOrder(false);
         alert('Pedido registrado exitosamente (Modo Local)');
       } catch (err: any) {
@@ -984,6 +1014,7 @@ export default function OrdersManager({
       setOrderPaidAmount('');
       setOrderShippingLocationId('');
       setOrderShippingCost('0');
+      setApplyShippingCost(true);
       setOrderPaymentMethod('cash');
       alert('Pedido creado exitosamente');
     } catch (error) {
@@ -1098,6 +1129,7 @@ export default function OrdersManager({
         setOrderPaidAmount('');
         setOrderShippingLocationId('');
         setOrderShippingCost('0');
+        setApplyShippingCost(true);
         setOrderPaymentMethod('cash');
         alert('Pedido creado exitosamente (Modo Local Activo)');
       } catch (fErr) {
@@ -1124,10 +1156,6 @@ export default function OrdersManager({
       default: return 'bg-amber-100 text-amber-700';
     }
   };
-
-  const manualSubtotal = orderItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
-  const manualShippingCost = Math.max(0, parseFloat(orderShippingCost) || 0);
-  const manualTotal = manualSubtotal + manualShippingCost;
 
   return (
     <div className="space-y-6">
@@ -1844,6 +1872,11 @@ export default function OrdersManager({
                             onClick={() => {
                               setSelectedCustomer('');
                               setCustomerSearch('Cliente Casual');
+                              setOrderShippingLocationId('');
+                              setOrderShippingCost('0');
+                              if (orderPaymentMethod !== 'credit') {
+                                setOrderPaidAmount(manualSubtotal.toString());
+                              }
                               setIsCustomerPickerOpen(false);
                             }}
                             className="w-full px-3 py-2 text-left text-xs font-semibold text-stone-600 hover:bg-stone-50 border-b border-stone-50"
@@ -1858,6 +1891,11 @@ export default function OrdersManager({
                                 setNewCustomerName(customerSearch);
                               }
                               setCustomerSearch('Crear nuevo cliente');
+                              setOrderShippingLocationId('');
+                              setOrderShippingCost('0');
+                              if (orderPaymentMethod !== 'credit') {
+                                setOrderPaidAmount(manualSubtotal.toString());
+                              }
                               setIsCustomerPickerOpen(false);
                             }}
                             className="w-full px-3 py-2 text-left text-xs font-bold text-primary hover:bg-primary/5 border-b border-stone-50"
@@ -2021,14 +2059,7 @@ export default function OrdersManager({
                       <select
                         value={orderShippingLocationId}
                         onChange={e => {
-                          const locationId = e.target.value;
-                          const rate = shippingRates.find(item => item.locationId === locationId);
-                          setOrderShippingLocationId(locationId);
-                          const nextCost = rate ? rate.cost : 0;
-                          setOrderShippingCost(nextCost.toString());
-                          if (orderPaymentMethod !== 'credit') {
-                            setOrderPaidAmount((manualSubtotal + nextCost).toString());
-                          }
+                          applyShippingLocation(e.target.value);
                         }}
                         className="w-full px-3 py-2 border border-stone-100 rounded-xl bg-stone-50 focus:bg-white text-xs font-bold text-stone-700 outline-none"
                       >
@@ -2042,6 +2073,9 @@ export default function OrdersManager({
                       {shippingRates.length === 0 && (
                         <p className="text-[10px] text-amber-600 font-semibold">Configura tarifas en Logistica para aplicar costos automaticamente.</p>
                       )}
+                      {selectedCustomerData?.city && (
+                        <p className="text-[10px] text-primary font-semibold">Ciudad del cliente: {selectedCustomerData.province ? `${selectedCustomerData.province} / ${selectedCustomerData.city}` : selectedCustomerData.city}</p>
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] text-stone-400 font-bold uppercase block">Costo</label>
@@ -2050,16 +2084,36 @@ export default function OrdersManager({
                         step="0.01"
                         min="0"
                         value={orderShippingCost}
+                        disabled={!applyShippingCost}
                         onChange={e => {
                           setOrderShippingCost(e.target.value);
                           if (orderPaymentMethod !== 'credit') {
                             setOrderPaidAmount((manualSubtotal + (parseFloat(e.target.value) || 0)).toString());
                           }
                         }}
-                        className="w-full px-3 py-2 border border-stone-100 rounded-xl bg-stone-50 focus:bg-white text-xs font-bold text-stone-700 outline-none"
+                        className="w-full px-3 py-2 border border-stone-100 rounded-xl bg-stone-50 focus:bg-white text-xs font-bold text-stone-700 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
                   </div>
+                  <label className="flex items-start gap-2 rounded-xl bg-stone-50 border border-stone-100 px-3 py-2 text-[11px] font-bold text-stone-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!applyShippingCost}
+                      onChange={e => {
+                        const shouldApply = !e.target.checked;
+                        setApplyShippingCost(shouldApply);
+                        const nextCost = shouldApply
+                          ? (shippingRates.find(item => item.locationId === orderShippingLocationId)?.cost || Math.max(0, parseFloat(orderShippingCost) || 0))
+                          : 0;
+                        setOrderShippingCost(nextCost.toString());
+                        if (orderPaymentMethod !== 'credit') {
+                          setOrderPaidAmount((manualSubtotal + nextCost).toString());
+                        }
+                      }}
+                      className="mt-0.5 h-4 w-4 rounded border-stone-300 text-stone-900 focus:ring-primary"
+                    />
+                    <span>No aplicar costo de envio a este pedido</span>
+                  </label>
                   <div className="rounded-xl bg-stone-50 border border-stone-100 px-3 py-2 text-[11px] font-semibold text-stone-600">
                     Productos: <span className="font-bold text-stone-900">${manualSubtotal.toFixed(2)}</span>
                     <span className="mx-2 text-stone-300">+</span>

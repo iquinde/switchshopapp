@@ -13,21 +13,29 @@ interface RawProvince {
 
 const rawCities = ciudadesData as Record<string, RawProvince>;
 
+export function toCapitalCase(value: string) {
+  return value
+    .toLocaleLowerCase('es-EC')
+    .replace(/(^|\s|\/|-)(\p{L})/gu, (_match, separator: string, letter: string) => `${separator}${letter.toLocaleUpperCase('es-EC')}`);
+}
+
 export const logisticsLocations: LogisticsLocation[] = Object.entries(rawCities).flatMap(([provinceCode, provinceData]) => {
   const province = provinceData.provincia || 'SIN PROVINCIA';
 
   return Object.entries(provinceData.cantones || {}).map(([cantonCode, cantonData]) => {
     const canton = cantonData.canton;
+    const formattedProvince = toCapitalCase(province);
+    const formattedCanton = toCapitalCase(canton);
 
     return {
       id: cantonCode,
       provinceCode,
-      province,
+      province: formattedProvince,
       cantonCode,
-      canton,
+      canton: formattedCanton,
       parishCode: cantonCode,
-      parish: canton,
-      label: `${province} / ${canton}`,
+      parish: formattedCanton,
+      label: `${formattedProvince} / ${formattedCanton}`,
     };
   });
 }).sort((a, b) => a.label.localeCompare(b.label));

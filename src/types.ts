@@ -26,6 +26,9 @@ export interface Customer {
   phone?: string;
   cedula?: string; // ID / Identification card
   address?: string;
+  logisticsLocationId?: string;
+  city?: string;
+  province?: string;
   totalSpent?: number;
   lastPurchase?: any;
   creditLimit?: number;
