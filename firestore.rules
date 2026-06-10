@@ -52,14 +52,7 @@ service cloud.firestore {
              companyId is string &&
              exists(/databases/$(database)/documents/companies/$(companyId)) &&
              get(/databases/$(database)/documents/companies/$(companyId)).data.status == 'active' &&
-             (
-               get(/databases/$(database)/documents/companies/$(companyId)).data.ownerEmail == request.auth.token.email ||
-               (
-                 'collaboratorEmails' in get(/databases/$(database)/documents/companies/$(companyId)).data &&
-                 request.auth.token.email in get(/databases/$(database)/documents/companies/$(companyId)).data.collaboratorEmails
-               ) ||
-               hasActiveCompanyRole(companyId)
-             );
+             hasActiveCompanyRole(companyId);
     }
 
     function hasRequiredFields(data, fields) {
@@ -91,12 +84,14 @@ service cloud.firestore {
     // Settings Validator
     function isValidSettings(data) {
       return hasRequiredFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroImage', 'footerText']) &&
-             hasOnlyAllowedFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroImage', 'footerText', 'heroBgType', 'heroBgColor', 'heroTextColor', 'stockAlertPercentage', 'supportPhone', 'supportEmail', 'whatsappNumber']) &&
+             hasOnlyAllowedFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroImage', 'logoImage', 'footerText', 'socialLinks', 'heroBgType', 'heroBgColor', 'heroTextColor', 'stockAlertPercentage', 'supportPhone', 'supportEmail', 'whatsappNumber']) &&
              data.storeName is string && data.storeName.size() > 0 && data.storeName.size() <= 100 &&
              data.heroTitle is string && data.heroTitle.size() > 0 && data.heroTitle.size() <= 200 &&
              data.heroSubtitle is string && data.heroSubtitle.size() > 0 && data.heroSubtitle.size() <= 1000 &&
              data.heroImage is string && (data.heroImage.matches("^https://.*") || data.heroImage.matches("^http://.*")) &&
+             (!('logoImage' in data) || data.logoImage == null || data.logoImage == '' || (data.logoImage is string && (data.logoImage.matches("^https://.*") || data.logoImage.matches("^http://.*")))) &&
              data.footerText is string && data.footerText.size() > 0 && data.footerText.size() <= 200 &&
+             (!('socialLinks' in data) || data.socialLinks == null || data.socialLinks is map) &&
              (!('heroBgType' in data) || data.heroBgType == null || (data.heroBgType is string)) &&
              (!('heroBgColor' in data) || data.heroBgColor == null || (data.heroBgColor is string)) &&
              (!('heroTextColor' in data) || data.heroTextColor == null || (data.heroTextColor is string)) &&
@@ -186,10 +181,10 @@ service cloud.firestore {
 
     // Company Validator
     function isValidCompany(data) {
-      return hasRequiredFields(data, ['name', 'ownerEmail', 'storeName', 'status', 'createdAt']) &&
+      return hasRequiredFields(data, ['name', 'storeName', 'status', 'createdAt']) &&
              hasOnlyAllowedFields(data, ['id', 'name', 'ownerEmail', 'collaboratorEmails', 'storeName', 'status', 'description', 'phone', 'whatsapp', 'email', 'createdAt']) &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
-             data.ownerEmail is string && data.ownerEmail.size() > 0 && data.ownerEmail.size() <= 100 &&
+             (!('ownerEmail' in data) || data.ownerEmail == null || (data.ownerEmail is string && data.ownerEmail.size() <= 100)) &&
              (!('collaboratorEmails' in data) || data.collaboratorEmails == null || (data.collaboratorEmails is list && data.collaboratorEmails.size() <= 20)) &&
              data.storeName is string && data.storeName.size() > 0 && data.storeName.size() <= 100 &&
              data.status is string && data.status in ['active', 'inactive'] &&
@@ -203,8 +198,10 @@ service cloud.firestore {
     // User Role Validator
     function isValidUserRole(data) {
       return hasRequiredFields(data, ['email', 'role', 'status', 'createdAt']) &&
-             hasOnlyAllowedFields(data, ['email', 'role', 'companyId', 'status', 'createdAt', 'updatedAt']) &&
+             hasOnlyAllowedFields(data, ['email', 'firstName', 'lastName', 'role', 'companyId', 'status', 'createdAt', 'updatedAt']) &&
              data.email is string && data.email.size() > 0 && data.email.size() <= 100 &&
+             (!('firstName' in data) || data.firstName == null || (data.firstName is string && data.firstName.size() > 0 && data.firstName.size() <= 100)) &&
+             (!('lastName' in data) || data.lastName == null || (data.lastName is string && data.lastName.size() > 0 && data.lastName.size() <= 100)) &&
              data.role is string && data.role in ['super_admin', 'company_admin', 'company_staff'] &&
              data.status is string && data.status in ['active', 'inactive'] &&
              data.createdAt is string &&

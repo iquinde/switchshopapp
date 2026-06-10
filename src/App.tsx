@@ -143,7 +143,14 @@ export default function App() {
     heroTitle: 'Calidad y Tradición Hecha a Mano.',
     heroSubtitle: 'Descubre nuestra cuidada selección de café premium de especialidad y piezas de joyería artesanal única. Cultivados y creados con dedicación para deleitar tus sentidos.',
     heroImage: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=2000',
+    logoImage: '',
     footerText: 'Productos seleccionados con alma, sabor y tradición.',
+    socialLinks: {
+      instagram: { enabled: false, url: '' },
+      facebook: { enabled: false, url: '' },
+      tiktok: { enabled: false, url: '' },
+      twitter: { enabled: false, url: '' }
+    },
   });
 
   const [activeCompany, setActiveCompany] = React.useState<Company | null>(null);
@@ -488,7 +495,14 @@ export default function App() {
             heroTitle: activeCompany.storeName,
             heroSubtitle: activeCompany.description || 'Te damos la bienvenida a nuestra tienda virtual. Descubre los mejores productos seleccionados y gestionados con dedicación.',
             heroImage: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=2000',
+            logoImage: '',
             footerText: `Productos de ${activeCompany.storeName}. Calidad y buen servicio garantizado.`,
+            socialLinks: {
+              instagram: { enabled: false, url: '' },
+              facebook: { enabled: false, url: '' },
+              tiktok: { enabled: false, url: '' },
+              twitter: { enabled: false, url: '' }
+            },
             supportPhone: activeCompany.phone || undefined,
             supportEmail: activeCompany.email || undefined,
             whatsappNumber: activeCompany.whatsapp || undefined,
@@ -643,6 +657,7 @@ export default function App() {
           onLogin={login}
           onLogout={logout}
           storeName={activeSettings.storeName}
+          logoImage={activeSettings.logoImage}
           storeBasePath={activeCompany ? `/tienda/${slugify(activeCompany.storeName)}` : undefined}
         />
         

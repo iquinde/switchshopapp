@@ -10,7 +10,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "seed:cities": "node scripts/seed-logistics-locations.mjs",
-    "deploy:rules": "npx firebase-tools deploy --only firestore:rules",
+    "deploy:rules": "npx firebase-tools deploy --only firestore:rules,storage",
     "deploy:dev": "npm run build && npm run deploy:rules && npm run seed:cities && npx firebase-tools hosting:channel:deploy dev",
     "deploy:prod": "npm run build && npm run deploy:rules && npm run seed:cities && npx firebase-tools deploy --only hosting"
   },

@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
-  Building, User, Mail, Search, Plus, Trash2, Edit2, X, Check, Save, 
-  Phone, Copy, ExternalLink, UserPlus
+  Building, User, Search, Plus, Trash2, Edit2, X, Check, Save, 
+  Phone, Copy, ExternalLink
 } from 'lucide-react';
 import { auth, db } from '../firebase';
 import { 
@@ -43,15 +43,6 @@ const buildPhoneValue = (areaCode: string, number: string) => {
   return cleanNumber ? `${areaCode}${cleanNumber}` : null;
 };
 
-const parseEmailList = (value: string) => {
-  return Array.from(new Set(
-    value
-      .split(/[\n,; ]+/)
-      .map(email => email.trim().toLowerCase())
-      .filter(Boolean)
-  ));
-};
-
 export default function CompaniesManager({ companies }: CompaniesManagerProps) {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
@@ -61,8 +52,6 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
   const [currentCompany, setCurrentCompany] = React.useState<Company | null>(null);
   const [name, setName] = React.useState('');
   const [storeName, setStoreName] = React.useState('');
-  const [ownerEmail, setOwnerEmail] = React.useState('');
-  const [collaboratorEmailsText, setCollaboratorEmailsText] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [phoneAreaCode, setPhoneAreaCode] = React.useState('+593');
   const [phoneNumber, setPhoneNumber] = React.useState('');
@@ -90,8 +79,6 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
   const resetForm = () => {
     setName('');
     setStoreName('');
-    setOwnerEmail('');
-    setCollaboratorEmailsText('');
     setDescription('');
     setPhoneAreaCode('+593');
     setPhoneNumber('');
@@ -112,8 +99,6 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
     setCurrentCompany(comp);
     setName(comp.name);
     setStoreName(comp.storeName);
-    setOwnerEmail(comp.ownerEmail);
-    setCollaboratorEmailsText((comp.collaboratorEmails || []).join('\n'));
     setDescription(comp.description || '');
     const parsedPhone = splitPhoneValue(comp.phone);
     const parsedWhatsapp = splitPhoneValue(comp.whatsapp);
@@ -128,22 +113,16 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !storeName.trim() || !ownerEmail.trim()) {
-      alert('Por favor complete los campos obligatorios: Propietario, Marca y Email de Acceso.');
+    if (!name.trim() || !storeName.trim()) {
+      alert('Por favor complete los campos obligatorios: Empresa y responsable.');
       return;
     }
 
     setIsSubmitting(true);
 
-    const normalizedOwnerEmail = ownerEmail.trim().toLowerCase();
-    const collaboratorEmails = parseEmailList(collaboratorEmailsText)
-      .filter(email => email !== normalizedOwnerEmail);
-
     const companyPayload = {
       name: name.trim(),
       storeName: storeName.trim(),
-      ownerEmail: normalizedOwnerEmail,
-      collaboratorEmails,
       description: description.trim() || null,
       phone: buildPhoneValue(phoneAreaCode, phoneNumber),
       whatsapp: buildPhoneValue(whatsappAreaCode, whatsappNumber),
@@ -195,8 +174,9 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
     }
     return c.storeName.toLowerCase().includes(searchTerm.toLowerCase()) || 
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      c.ownerEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (c.collaboratorEmails || []).some(email => email.toLowerCase().includes(searchTerm.toLowerCase()));
+      (c.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.phone || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.whatsapp || '').toLowerCase().includes(searchTerm.toLowerCase());
   });
 
   return (
@@ -204,7 +184,7 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 px-1">
         <div>
           <h2 className="text-xl sm:text-3xl font-serif font-bold text-stone-900">Empresas</h2>
-          <p className="text-stone-500 text-xs sm:text-sm">Administra las cuentas de los vendedores externos autorizados.</p>
+          <p className="text-stone-500 text-xs sm:text-sm">Administra empresas y datos comerciales. Los accesos se asignan desde Usuarios.</p>
         </div>
         <button 
           onClick={handleOpenAdd}
@@ -219,7 +199,7 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={16} />
         <input 
           type="text" 
-          placeholder="Buscar marcas, propietarios o emails..."
+          placeholder="Buscar marcas, responsables o contacto..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="pl-9 pr-4 py-2.5 w-full bg-stone-50 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 transition-all font-medium"
@@ -248,20 +228,8 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
               <div className="space-y-2 border-t border-stone-50 pt-4 text-xs font-medium text-stone-600">
                 <div className="flex items-center gap-2">
                   <User size={14} className="text-stone-400" />
-                  <span>Propietario: {comp.name}</span>
+                  <span>Responsable: {comp.name}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Mail size={14} className="text-stone-400" />
-                  <span className="font-mono">{comp.ownerEmail}</span>
-                </div>
-                {(comp.collaboratorEmails || []).length > 0 && (
-                  <div className="flex items-start gap-2">
-                    <UserPlus size={14} className="text-stone-400 mt-0.5" />
-                    <span className="font-mono leading-relaxed">
-                      {(comp.collaboratorEmails || []).join(', ')}
-                    </span>
-                  </div>
-                )}
                 {(comp.phone || comp.whatsapp) && (
                   <div className="flex items-center gap-2">
                     <Phone size={14} className="text-stone-400" />
@@ -367,7 +335,7 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
-                    Marca / Tienda <span className="text-red-500">*</span>
+                    Empresa / Tienda <span className="text-red-500">*</span>
                   </label>
                   <input 
                     type="text" 
@@ -380,50 +348,17 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
                 </div>
                 <div>
                   <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
-                    Propietario <span className="text-red-500">*</span>
+                    Responsable <span className="text-red-500">*</span>
                   </label>
                   <input 
                     type="text" 
                     required
-                    placeholder="Nombre completo"
+                    placeholder="Nombre de contacto"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
-                  Email de Cuenta Google de Acceso <span className="text-red-500">*</span>
-                </label>
-                <input 
-                  type="email" 
-                  required
-                  placeholder="ejemplo@gmail.com"
-                  value={ownerEmail}
-                  onChange={(e) => setOwnerEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
-                />
-                <span className="text-[10px] text-stone-400 mt-1 block leading-relaxed">
-                  El propietario deberá iniciar sesión con esta cuenta de Google para poder gestionar su tienda de forma segura.
-                </span>
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
-                  Usuarios autorizados adicionales
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="otro.usuario@gmail.com"
-                  value={collaboratorEmailsText}
-                  onChange={(e) => setCollaboratorEmailsText(e.target.value)}
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
-                />
-                <span className="text-[10px] text-stone-400 mt-1 block leading-relaxed">
-                  Separa varios correos con coma, espacio o una linea nueva. Cada correo podra entrar con Google y gestionar esta misma empresa.
-                </span>
               </div>
 
               <div>

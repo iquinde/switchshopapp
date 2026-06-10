@@ -9,6 +9,7 @@ interface NavbarProps {
   onLogin: () => void;
   onLogout: () => void;
   storeName?: string;
+  logoImage?: string;
   storeBasePath?: string;
 }
 
@@ -21,7 +22,7 @@ const navItems: Array<{ key: NavKey; label: string; hash: string }> = [
   { key: 'contacto', label: 'Contacto', hash: 'contacto' },
 ];
 
-export default function Navbar({ cartCount, onCartClick, user, onLogin, onLogout, storeName = 'SwitchShop', storeBasePath }: NavbarProps) {
+export default function Navbar({ cartCount, onCartClick, user, onLogin, onLogout, storeName = 'SwitchShop', logoImage, storeBasePath }: NavbarProps) {
   const [isScrolled, setIsScrolled] = React.useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const normalizedStoreBasePath = storeBasePath?.replace(/\/$/, '');
@@ -66,7 +67,14 @@ export default function Navbar({ cartCount, onCartClick, user, onLogin, onLogout
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center">
           <div className="flex items-center">
-            <h1 className="text-2xl font-serif font-bold tracking-tight text-stone-900">
+            {logoImage && (
+              <img
+                src={logoImage}
+                alt={`${storeName} logo`}
+                className="h-10 w-10 sm:h-11 sm:w-11 object-contain shrink-0 mr-3"
+              />
+            )}
+            <h1 className="text-xl sm:text-2xl font-serif font-bold tracking-tight text-stone-900 truncate max-w-[150px] sm:max-w-none">
               {storeName}<span className="text-primary">.</span>
             </h1>
           </div>

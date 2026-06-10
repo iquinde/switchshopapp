@@ -1,9 +1,9 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { db } from '../firebase';
+import { db, getDownloadURL, ref, storage, uploadBytes } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { StoreSettings } from '../types';
-import { Save, Sparkles, RefreshCw, Layers, Check, Layout, AlertCircle, Palette, Image, CheckCircle2, Upload } from 'lucide-react';
+import { Save, Sparkles, RefreshCw, Layers, Check, Layout, AlertCircle, Palette, Image, CheckCircle2, Upload, X } from 'lucide-react';
 import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive } from '../lib/offlineDb';
 
 // Predefined professional color palettes for the catalog top background
@@ -34,6 +34,20 @@ interface SettingsManagerProps {
   companyId?: string;
 }
 
+const DEFAULT_SOCIAL_LINKS: NonNullable<StoreSettings['socialLinks']> = {
+  instagram: { enabled: false, url: '' },
+  facebook: { enabled: false, url: '' },
+  tiktok: { enabled: false, url: '' },
+  twitter: { enabled: false, url: '' }
+};
+
+const normalizeSocialLinks = (links?: StoreSettings['socialLinks']) => ({
+  instagram: { ...DEFAULT_SOCIAL_LINKS.instagram, ...(links?.instagram || {}) },
+  facebook: { ...DEFAULT_SOCIAL_LINKS.facebook, ...(links?.facebook || {}) },
+  tiktok: { ...DEFAULT_SOCIAL_LINKS.tiktok, ...(links?.tiktok || {}) },
+  twitter: { ...DEFAULT_SOCIAL_LINKS.twitter, ...(links?.twitter || {}) }
+});
+
 export default function SettingsManager({ companyId }: SettingsManagerProps) {
   const settingsDocId = companyId || 'store';
 
@@ -42,7 +56,9 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
     heroTitle: 'Calidad y Tradición Hecha a Mano.',
     heroSubtitle: 'Descubre nuestra cuidada selección de café premium de especialidad y piezas de joyería artesanal única. Cultivados y creados con dedicación para deleitar tus sentidos.',
     heroImage: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=2000',
+    logoImage: '',
     footerText: 'Productos seleccionados con alma, sabor y tradición.',
+    socialLinks: DEFAULT_SOCIAL_LINKS,
     heroBgType: 'image',
     heroBgColor: '#1c1917',
     heroTextColor: 'light',
@@ -55,9 +71,9 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
   const [saveSuccess, setSaveSuccess] = React.useState(false);
-  
-  // State for customized hex value for solid background when custom is active
-  const [customColor, setCustomColor] = React.useState('#1c1917');
+  const [logoUploadError, setLogoUploadError] = React.useState('');
+  const [pendingLogoFile, setPendingLogoFile] = React.useState<File | null>(null);
+  const [pendingLogoPreview, setPendingLogoPreview] = React.useState('');
 
   // Load existing settings
   React.useEffect(() => {
@@ -72,7 +88,9 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
           stockAlertPercentage: local.stockAlertPercentage ?? 20,
           supportPhone: local.supportPhone || '+593 99 999 9999',
           supportEmail: local.supportEmail || 'soporte@switchshop.com',
-          whatsappNumber: local.whatsappNumber || '+593 99 999 9999'
+          whatsappNumber: local.whatsappNumber || '+593 99 999 9999',
+          logoImage: local.logoImage || '',
+          socialLinks: normalizeSocialLinks(local.socialLinks)
         });
         setIsLoading(false);
         return;
@@ -90,7 +108,9 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
             stockAlertPercentage: data.stockAlertPercentage ?? 20,
             supportPhone: data.supportPhone || '+593 99 999 9999',
             supportEmail: data.supportEmail || 'soporte@switchshop.com',
-            whatsappNumber: data.whatsappNumber || '+593 99 999 9999'
+            whatsappNumber: data.whatsappNumber || '+593 99 999 9999',
+            logoImage: data.logoImage || '',
+            socialLinks: normalizeSocialLinks(data.socialLinks)
           });
         } else {
           const local = offlineDb.getSettings();
@@ -102,7 +122,9 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
             stockAlertPercentage: local.stockAlertPercentage ?? 20,
             supportPhone: local.supportPhone || '+593 99 999 9999',
             supportEmail: local.supportEmail || 'soporte@switchshop.com',
-            whatsappNumber: local.whatsappNumber || '+593 99 999 9999'
+            whatsappNumber: local.whatsappNumber || '+593 99 999 9999',
+            logoImage: local.logoImage || '',
+            socialLinks: normalizeSocialLinks(local.socialLinks)
           });
         }
       } catch (err) {
@@ -117,7 +139,9 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
           stockAlertPercentage: local.stockAlertPercentage ?? 20,
           supportPhone: local.supportPhone || '+593 99 999 9999',
           supportEmail: local.supportEmail || 'soporte@switchshop.com',
-          whatsappNumber: local.whatsappNumber || '+593 99 999 9999'
+          whatsappNumber: local.whatsappNumber || '+593 99 999 9999',
+          logoImage: local.logoImage || '',
+          socialLinks: normalizeSocialLinks(local.socialLinks)
         });
       } finally {
         setIsLoading(false);
@@ -175,13 +199,84 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
     }));
   };
 
+  const persistSettings = async (nextSettings: StoreSettings) => {
+    if (getOfflineFallbackActive()) {
+      offlineDb.saveSettings(nextSettings);
+      return;
+    }
+
+    const docRef = doc(db, 'settings', settingsDocId);
+    await setDoc(docRef, nextSettings, { merge: true });
+  };
+
+  const getFileExtension = (file: File) => {
+    const fromName = file.name.split('.').pop()?.toLowerCase();
+    if (fromName) return fromName;
+    return file.type.split('/')[1] || 'png';
+  };
+
+  const uploadLogoFile = async (file: File) => {
+    if (!storage) {
+      throw new Error('Firebase Storage no está configurado. Revisa el storageBucket del proyecto.');
+    }
+
+    const extension = getFileExtension(file);
+    const storageRef = ref(storage, `logos/${settingsDocId}/logo-${Date.now()}.${extension}`);
+    const snapshot = await uploadBytes(storageRef, file, { contentType: file.type });
+    return getDownloadURL(snapshot.ref);
+  };
+
+  const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) return;
+
+    const supportedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml', 'image/gif'];
+    if (!supportedTypes.includes(file.type)) {
+      setLogoUploadError('Formato no soportado. Usa JPG, PNG, WEBP, SVG o GIF.');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoUploadError('El logo supera 2MB. Usa una versión más liviana para que la tienda cargue rápido.');
+      return;
+    }
+
+    setLogoUploadError('');
+    setPendingLogoFile(file);
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        setPendingLogoPreview(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    setPendingLogoFile(null);
+    setPendingLogoPreview('');
+    setSettings(prev => ({ ...prev, logoImage: '' }));
+    setLogoUploadError('');
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     setSaveSuccess(false);
 
     if (getOfflineFallbackActive()) {
-      offlineDb.saveSettings(settings);
+      if (pendingLogoFile && pendingLogoPreview) {
+        const localSettings = { ...settings, logoImage: pendingLogoPreview };
+        offlineDb.saveSettings(localSettings);
+        setSettings(localSettings);
+      } else {
+        offlineDb.saveSettings(settings);
+      }
+      setPendingLogoFile(null);
+      setPendingLogoPreview('');
       setSaveSuccess(true);
       setIsSaving(false);
       setTimeout(() => setSaveSuccess(false), 4000);
@@ -189,19 +284,41 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
     }
 
     try {
-      const docRef = doc(db, 'settings', settingsDocId);
-      await setDoc(docRef, settings);
+      const nextSettings = pendingLogoFile
+        ? { ...settings, logoImage: await uploadLogoFile(pendingLogoFile) }
+        : settings;
+      await persistSettings(nextSettings);
+      setSettings(nextSettings);
+      setPendingLogoFile(null);
+      setPendingLogoPreview('');
+      setLogoUploadError('');
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 4500);
     } catch (err) {
-      console.warn("Error saving setting to cloud, falling back to local: ", err);
-      setOfflineFallbackActive(true);
-      offlineDb.saveSettings(settings);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 4500);
+      console.warn("Error saving setting to cloud: ", err);
+      setLogoUploadError('No se pudo guardar la configuración. Si elegiste un logo, revisa las reglas de Firebase Storage.');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const updateSocialLink = (
+    key: keyof NonNullable<StoreSettings['socialLinks']>,
+    patch: { enabled?: boolean; url?: string }
+  ) => {
+    setSettings(prev => {
+      const socialLinks = normalizeSocialLinks(prev.socialLinks);
+      return {
+        ...prev,
+        socialLinks: {
+          ...socialLinks,
+          [key]: {
+            ...socialLinks[key],
+            ...patch
+          }
+        }
+      };
+    });
   };
 
   if (isLoading) {
@@ -216,6 +333,18 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
   const activeBgType = settings.heroBgType || 'solid';
   const activeBgColor = settings.heroBgColor || '#1c1917';
   const isLightText = settings.heroTextColor !== 'dark';
+  const logoPreview = pendingLogoPreview || settings.logoImage || '';
+  const socialLinks = normalizeSocialLinks(settings.socialLinks);
+  const socialOptions: Array<{
+    key: keyof NonNullable<StoreSettings['socialLinks']>;
+    label: string;
+    placeholder: string;
+  }> = [
+    { key: 'instagram', label: 'Instagram', placeholder: 'https://instagram.com/tu_marca' },
+    { key: 'facebook', label: 'Facebook', placeholder: 'https://facebook.com/tu_marca' },
+    { key: 'tiktok', label: 'TikTok', placeholder: 'https://tiktok.com/@tu_marca' },
+    { key: 'twitter', label: 'X / Twitter', placeholder: 'https://x.com/tu_marca' }
+  ];
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -287,6 +416,88 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
                   className="w-full px-4 py-2 bg-stone-50 rounded-xl border border-stone-100 outline-none focus:ring-2 focus:ring-primary/20 focus:bg-white text-sm"
                 />
                 <p className="text-[9px] text-stone-400 font-light">Modifica la marca de la tienda en el encabezado, pestañas y pie de página.</p>
+              </div>
+
+              {/* Brand Logo */}
+              <div className="border border-stone-100 p-5 rounded-2xl bg-stone-50/50 space-y-4">
+                <div className="flex items-center space-x-2 border-b border-stone-100 pb-2">
+                  <Image size={16} className="text-primary" />
+                  <h4 className="text-xs font-bold text-stone-800 uppercase tracking-wider">Logo de la Marca</h4>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-4 items-start">
+                  <div className="h-28 w-full md:w-28 rounded-2xl border border-stone-200 bg-white flex items-center justify-center overflow-hidden">
+                    {logoPreview ? (
+                      <img
+                        src={logoPreview}
+                        alt="Vista previa del logo"
+                        className="max-h-full max-w-full object-contain p-3"
+                      />
+                    ) : (
+                      <div className="text-center px-3">
+                        <Image size={22} className="mx-auto text-stone-300 mb-1" />
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-stone-300">Sin logo</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-stone-500 uppercase tracking-widest block">URL del Logo</label>
+                      <input
+                        type="text"
+                        placeholder="https://... o sube un archivo"
+                        value={pendingLogoFile ? pendingLogoFile.name : (settings.logoImage || '')}
+                        disabled={!!pendingLogoFile}
+                        onChange={e => {
+                          setSettings({ ...settings, logoImage: e.target.value });
+                          setLogoUploadError('');
+                        }}
+                        className="w-full px-4 py-2 bg-white rounded-xl border border-stone-100 outline-none focus:ring-2 focus:ring-primary/20 text-xs font-mono"
+                      />
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <label className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+                        isSaving
+                          ? 'bg-stone-300 text-white cursor-wait'
+                          : 'bg-stone-900 hover:bg-stone-850 text-white cursor-pointer'
+                      }`}>
+                        <Upload size={14} />
+                        <span>{pendingLogoFile ? 'Cambiar Logo' : 'Subir Logo'}</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+                          className="hidden"
+                          disabled={isSaving}
+                          onChange={handleLogoUpload}
+                        />
+                      </label>
+
+                      {logoPreview && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveLogo}
+                          disabled={isSaving}
+                          className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-stone-100 text-stone-600 rounded-xl text-xs font-bold border border-stone-200 transition-colors"
+                        >
+                          <X size={14} />
+                          <span>Quitar</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <p className="text-[10px] text-stone-400 leading-relaxed font-light">
+                      Acepta JPG, PNG, WEBP, SVG y GIF. El archivo se subirá y guardará cuando presiones Guardar Cambios.
+                    </p>
+                    {pendingLogoFile && (
+                      <p className="text-[10px] text-green-600 font-semibold">Logo listo para guardar.</p>
+                    )}
+                    {logoUploadError && (
+                      <p className="text-[10px] text-red-500 font-semibold">{logoUploadError}</p>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Hero Title */}
@@ -599,6 +810,54 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
                 </p>
               </div>
 
+              {/* Redes Sociales */}
+              <div className="border border-stone-100 p-5 rounded-2xl bg-stone-50/50 space-y-4">
+                <div className="flex items-center space-x-2 border-b border-stone-100 pb-2">
+                  <span className="text-primary font-serif font-bold text-sm">@</span>
+                  <h4 className="text-xs font-bold text-stone-800 uppercase tracking-wider font-serif">Redes Sociales</h4>
+                </div>
+
+                <div className="space-y-3">
+                  {socialOptions.map(option => {
+                    const item = socialLinks[option.key] || { enabled: false, url: '' };
+                    return (
+                      <div key={option.key} className="grid grid-cols-1 md:grid-cols-[170px_1fr] gap-3 items-center bg-white border border-stone-100 rounded-2xl p-3">
+                        <label className="flex w-full items-center justify-start gap-3">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={!!item.enabled}
+                            onClick={() => updateSocialLink(option.key, { enabled: !item.enabled })}
+                            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                              item.enabled ? 'bg-stone-900' : 'bg-stone-200'
+                            }`}
+                          >
+                            <span
+                              className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                                item.enabled ? 'translate-x-5' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                          <span className="text-xs font-bold text-stone-800">{option.label}</span>
+                        </label>
+
+                        <input
+                          type="url"
+                          placeholder={option.placeholder}
+                          value={item.url || ''}
+                          onChange={e => updateSocialLink(option.key, { url: e.target.value })}
+                          className="w-full px-3 py-2 bg-stone-50 rounded-xl border border-stone-100 outline-none focus:ring-2 focus:ring-primary/20 focus:bg-white text-xs font-mono disabled:text-stone-300"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <p className="text-[10px] text-stone-400 leading-relaxed font-light">
+                  Solo se mostrarán en la tienda las redes que estén activas y tengan un enlace configurado.
+                </p>
+              </div>
+
               {/* Configuración de Alertas de Stock */}
               <div className="border border-stone-100 p-5 rounded-2xl bg-stone-50/50 space-y-4">
                 <div className="flex items-center space-x-2 border-b border-stone-100 pb-2">
@@ -690,7 +949,11 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
 
               {/* Fake App Bar */}
               <div className="bg-white/80 backdrop-blur-md px-3 py-2 flex justify-between items-center border-b border-stone-100">
-                <span className="font-serif font-black text-xs text-stone-900">{settings.storeName}<span className="text-primary text-[10px]">.</span></span>
+                {settings.logoImage ? (
+                  <img src={settings.logoImage} alt={settings.storeName} className="h-6 max-w-24 object-contain" />
+                ) : (
+                  <span className="font-serif font-black text-xs text-stone-900">{settings.storeName}<span className="text-primary text-[10px]">.</span></span>
+                )}
                 <div className="h-4 w-4 rounded-full bg-stone-100 flex items-center justify-center text-[8px]">🛒</div>
               </div>
 
@@ -731,7 +994,11 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
 
               {/* Footer crop */}
               <div className="bg-white p-3 border-t border-stone-100 text-center space-y-1 text-[8px]">
-                <div className="font-serif font-bold text-stone-900 text-[9px]">{settings.storeName}.</div>
+                {settings.logoImage ? (
+                  <img src={settings.logoImage} alt={settings.storeName} className="h-7 max-w-28 object-contain mx-auto" />
+                ) : (
+                  <div className="font-serif font-bold text-stone-900 text-[9px]">{settings.storeName}.</div>
+                )}
                 <p className="text-stone-400 line-clamp-1">{settings.footerText}</p>
                 <div className="text-stone-300 mt-2 font-mono">© 2026 {settings.storeName}.</div>
               </div>

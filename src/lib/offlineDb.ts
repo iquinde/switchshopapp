@@ -102,7 +102,14 @@ const DEFAULT_SETTINGS: StoreSettings = {
   heroTitle: "Calidad y Tradición Hecha a Mano.",
   heroSubtitle: "Descubre nuestra cuidada selección de café premium de especialidad y piezas de joyería artesanal única. Cultivados y creados con dedicación para deleitar tus sentidos.",
   heroImage: "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=2000",
+  logoImage: "",
   footerText: "Productos seleccionados con alma, sabor y tradición.",
+  socialLinks: {
+    instagram: { enabled: false, url: "" },
+    facebook: { enabled: false, url: "" },
+    tiktok: { enabled: false, url: "" },
+    twitter: { enabled: false, url: "" }
+  },
   heroBgType: "image",
   heroBgColor: "#1c1917",
   heroTextColor: "light",

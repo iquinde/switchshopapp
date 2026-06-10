@@ -16,6 +16,8 @@ export default function UsersManager({ companies }: UsersManagerProps) {
   const [isEditing, setIsEditing] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [roleEmail, setRoleEmail] = React.useState('');
+  const [roleFirstName, setRoleFirstName] = React.useState('');
+  const [roleLastName, setRoleLastName] = React.useState('');
   const [roleType, setRoleType] = React.useState<AppRole>('company_admin');
   const [roleCompanyId, setRoleCompanyId] = React.useState('');
   const [roleStatus, setRoleStatus] = React.useState<'active' | 'inactive'>('active');
@@ -39,6 +41,8 @@ export default function UsersManager({ companies }: UsersManagerProps) {
 
   const resetRoleForm = () => {
     setRoleEmail('');
+    setRoleFirstName('');
+    setRoleLastName('');
     setRoleType('company_admin');
     setRoleCompanyId('');
     setRoleStatus('active');
@@ -53,6 +57,8 @@ export default function UsersManager({ companies }: UsersManagerProps) {
 
   const handleEditRole = (role: UserRoleRecord) => {
     setRoleEmail(role.email);
+    setRoleFirstName(role.firstName || '');
+    setRoleLastName(role.lastName || '');
     setRoleType(role.role);
     setRoleCompanyId(role.companyId || '');
     setRoleStatus(role.status);
@@ -69,6 +75,13 @@ export default function UsersManager({ companies }: UsersManagerProps) {
       return;
     }
 
+    const firstName = roleFirstName.trim();
+    const lastName = roleLastName.trim();
+    if (!firstName || !lastName) {
+      alert('Ingresa el nombre y apellido del usuario.');
+      return;
+    }
+
     if (roleType !== 'super_admin' && !roleCompanyId) {
       alert('Selecciona una empresa para este rol.');
       return;
@@ -78,6 +91,8 @@ export default function UsersManager({ companies }: UsersManagerProps) {
     const existingRole = userRoles.find(role => role.email === normalizedRoleEmail);
     const payload: UserRoleRecord = {
       email: normalizedRoleEmail,
+      firstName,
+      lastName,
       role: roleType,
       companyId: roleType === 'super_admin' ? null : roleCompanyId,
       status: roleStatus,
@@ -139,9 +154,13 @@ export default function UsersManager({ companies }: UsersManagerProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {userRoles.map(role => {
               const company = companies.find(comp => comp.id === role.companyId);
+              const fullName = [role.firstName, role.lastName].filter(Boolean).join(' ').trim();
               return (
                 <div key={role.email} className="border border-stone-100 rounded-xl p-3 flex items-start justify-between gap-3 bg-stone-50/60">
                   <div className="min-w-0">
+                    {fullName && (
+                      <p className="font-bold text-sm text-stone-900 truncate">{fullName}</p>
+                    )}
                     <p className="font-mono text-xs font-bold text-stone-800 truncate">{role.email}</p>
                     <p className="text-[11px] text-stone-500 mt-1">
                       {role.role === 'super_admin' ? 'Super admin' : role.role === 'company_admin' ? 'Admin empresa' : 'Colaborador'}
@@ -213,6 +232,36 @@ export default function UsersManager({ companies }: UsersManagerProps) {
                   disabled={Boolean(editingRoleEmail)}
                   className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium disabled:bg-stone-50 disabled:text-stone-400"
                 />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
+                    Nombre <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Israel"
+                    value={roleFirstName}
+                    onChange={(e) => setRoleFirstName(e.target.value)}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
+                    Apellido <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Quinde"
+                    value={roleLastName}
+                    onChange={(e) => setRoleLastName(e.target.value)}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
