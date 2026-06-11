@@ -67,7 +67,7 @@ export default function Hero({ user, activeCompany, settings }: HeroProps) {
             >
               <Sparkles size={14} className="text-accent animate-pulse" />
               <span className="text-xs sm:text-sm font-medium tracking-wide">
-                ¡Hola, {greetingName}! Nos alegra tenerte aquí
+                ¡Hola, {firstName}! Nos alegra tenerte aquí
               </span>
             </motion.div>
           )}

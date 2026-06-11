@@ -2,7 +2,7 @@ import React from 'react';
 import { X, Plus, Minus, ShoppingBag, ArrowLeft, CheckCircle, Smartphone, User, MapPin } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CartItem, Order, Customer } from '../types';
-import { db, logClientError } from '../firebase';
+import { auth, db, logClientError } from '../firebase';
 import { collection, query, where, getDocs, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import ProductImageFallback from './ProductImageFallback';
 import { isRealProductImage } from '../lib/productImages';
@@ -15,9 +15,23 @@ interface CartProps {
   onRemove: (id: string) => void;
   onClearCart?: () => void;
   activeCompanyId?: string;
+  activeCustomerId?: string | null;
+  requireCustomerAuth?: boolean;
+  onRequireCustomerAuth?: () => void;
 }
 
-export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemove, onClearCart, activeCompanyId }: CartProps) {
+export default function Cart({
+  isOpen,
+  onClose,
+  items,
+  onUpdateQuantity,
+  onRemove,
+  onClearCart,
+  activeCompanyId,
+  activeCustomerId,
+  requireCustomerAuth = false,
+  onRequireCustomerAuth
+}: CartProps) {
   const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   const belongsToTargetCompany = (customer: Customer, targetCompanyId?: string) => {
@@ -38,7 +52,6 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
   const [phone, setPhone] = React.useState('');
   const [cedula, setCedula] = React.useState('');
   const [address, setAddress] = React.useState('');
-  const [paymentMethod, setPaymentMethod] = React.useState<'cash' | 'card' | 'transfer' | 'credit'>('cash');
   const [notes, setNotes] = React.useState('');
   
   // Created order feedback
@@ -57,9 +70,20 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
     }
   }, [isOpen]);
 
+  React.useEffect(() => {
+    if (!isCheckingOut || name.trim()) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    setName(currentUser.displayName || currentUser.email?.split('@')[0] || '');
+  }, [isCheckingOut, name]);
+
   const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (items.length === 0) return;
+    if (requireCustomerAuth && !activeCustomerId) {
+      onRequireCustomerAuth?.();
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -67,15 +91,17 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
       const targetCompanyId = activeCompanyId || items[0]?.companyId || undefined;
 
       // 1. Search for customer by cedula or phone number to link or register
-      let finalCustomerId = '';
-      let finalCustomerName = name.trim();
+      let finalCustomerId = activeCustomerId || '';
+      let finalCustomerName = name.trim() || auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || 'Cliente';
       let finalCustomerPhone = phone.trim();
       let finalCustomerCedula = cedula.trim();
 
       let existingCustomerDoc: any = null;
 
-      // Match by Cedula first
-      if (finalCustomerCedula) {
+      const canLookupExistingCustomers = false;
+
+      // Match by Cedula first. Public storefront buyers create pending customer requests instead.
+      if (canLookupExistingCustomers && finalCustomerCedula) {
         const qCed = query(collection(db, 'customers'), where('cedula', '==', finalCustomerCedula));
         const snapCed = await getDocs(qCed);
         if (!snapCed.empty) {
@@ -86,7 +112,7 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
       }
 
       // Match by Phone if not found by Cedula
-      if (!existingCustomerDoc && finalCustomerPhone) {
+      if (canLookupExistingCustomers && !existingCustomerDoc && finalCustomerPhone) {
         const qPhone = query(collection(db, 'customers'), where('phone', '==', finalCustomerPhone));
         const snapPhone = await getDocs(qPhone);
         if (!snapPhone.empty) {
@@ -96,7 +122,20 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
         }
       }
 
-      if (existingCustomerDoc) {
+      if (activeCustomerId) {
+        const customerUpdateData: any = {
+          name: finalCustomerName || auth.currentUser?.displayName || 'Cliente',
+          address: address.trim() || '',
+          lastPurchase: serverTimestamp(),
+        };
+
+        if (auth.currentUser?.email) customerUpdateData.email = auth.currentUser.email;
+        if (finalCustomerPhone) customerUpdateData.phone = finalCustomerPhone;
+        if (finalCustomerCedula) customerUpdateData.cedula = finalCustomerCedula;
+        if (targetCompanyId) customerUpdateData.companyId = targetCompanyId;
+
+        batch.update(doc(db, 'customers', activeCustomerId), customerUpdateData);
+      } else if (existingCustomerDoc) {
         // Linked to existing client profile
         finalCustomerId = existingCustomerDoc.id;
         const currentData = existingCustomerDoc.data() as Customer;
@@ -115,7 +154,7 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
           finalCustomerCedula = currentData.cedula || '';
         }
 
-        const nextDebt = paymentMethod === 'credit' ? (currentData.currentDebt || 0) + total : (currentData.currentDebt || 0);
+        const nextDebt = currentData.currentDebt || 0;
         const nextSpent = (currentData.totalSpent || 0) + total;
         
         const updateData: any = {
@@ -148,7 +187,7 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
           name: finalCustomerName,
           address: address.trim() || '',
           totalSpent: total,
-          currentDebt: paymentMethod === 'credit' ? total : 0,
+          currentDebt: 0,
           createdAt: serverTimestamp(),
           lastPurchase: serverTimestamp(),
           status: 'pending' // Enters as a request for first-time clients
@@ -173,9 +212,9 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
         total: total,
         status: 'pending',
         dispatchStatus: 'pending',
-        paymentMethod: paymentMethod,
-        paymentStatus: (paymentMethod === 'card') ? 'paid' : 'unpaid',
-        amountPaid: (paymentMethod === 'card') ? total : 0,
+        paymentMethod: 'cash',
+        paymentStatus: 'unpaid',
+        amountPaid: 0,
         customerName: finalCustomerName,
         createdAt: serverTimestamp(),
       };
@@ -210,7 +249,6 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
         targetCompanyId: activeCompanyId || items[0]?.companyId || null,
         itemsCount: items.length,
         productIds: items.map(item => item.id),
-        paymentMethod,
         total,
         hasCustomerPhone: Boolean(phone.trim()),
         hasCustomerCedula: Boolean(cedula.trim()),
@@ -363,40 +401,6 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
                       </div>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Forma / Tipo de Pedido</label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { id: 'cash', label: 'Efectivo contra entrega' },
-                          { id: 'transfer', label: 'Transferencia Bancaria' },
-                          { id: 'credit', label: 'A Crédito / Cobrar' }
-                        ].map((way) => (
-                          <button
-                            key={way.id}
-                            type="button"
-                            onClick={() => setPaymentMethod(way.id as any)}
-                            className={`py-2 px-1.5 rounded-xl border text-[10px] sm:text-xs font-semibold text-center transition-all ${
-                              paymentMethod === way.id 
-                                ? 'bg-stone-900 border-stone-900 text-white shadow-sm' 
-                                : 'bg-stone-50 text-stone-500 border-stone-100 hover:bg-stone-100'
-                            }`}
-                          >
-                            {way.label}
-                          </button>
-                        ))}
-                      </div>
-                      {paymentMethod === 'transfer' && (
-                        <p className="text-[10px] text-blue-600 bg-blue-50/50 p-2 rounded-lg font-medium tracking-tight border border-blue-105">
-                          Asegúrate de enviar una copia del comprobante o captura de pantalla bancaria de tu depósito en WhatsApp.
-                        </p>
-                      )}
-                      {paymentMethod === 'credit' && (
-                        <p className="text-[10px] text-orange-600 bg-orange-50/50 p-2 rounded-lg font-medium tracking-tight border border-orange-105">
-                          Pedido a crédito. El valor se registrará automáticamente en tu cuenta por cobrar.
-                        </p>
-                      )}
-                    </div>
-
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Instrucciones o Notas Especiales</label>
                       <textarea
@@ -481,7 +485,13 @@ export default function Cart({ isOpen, onClose, items, onUpdateQuantity, onRemov
                       <span className="text-xl font-bold text-stone-900">${total.toFixed(2)}</span>
                     </div>
                     <button 
-                      onClick={() => setIsCheckingOut(true)}
+                      onClick={() => {
+                        if (requireCustomerAuth && !activeCustomerId) {
+                          onRequireCustomerAuth?.();
+                          return;
+                        }
+                        setIsCheckingOut(true);
+                      }}
                       className="w-full bg-stone-900 text-white py-4 rounded-xl font-bold hover:bg-primary transition-colors text-sm"
                     >
                       Finalizar Compra

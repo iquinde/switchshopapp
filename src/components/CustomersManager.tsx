@@ -1,12 +1,12 @@
 import React from 'react';
 import { 
   Users, Search, Plus, Phone, Mail, MapPin, DollarSign, Edit2, 
-  Trash2, X, Check, Save, UserPlus, CreditCard, ExternalLink
+  Trash2, X, Check, Save, UserPlus, CreditCard, ExternalLink, GitMerge
 } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { 
   collection, query, onSnapshot, doc, updateDoc, 
-  addDoc, deleteDoc, serverTimestamp, getDocs, writeBatch
+  addDoc, deleteDoc, serverTimestamp, getDocs, writeBatch, where
 } from 'firebase/firestore';
 import { Customer } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -79,14 +79,19 @@ export default function CustomersManager({
 
   // Single customer overview ledger
   const [selectedCustomer, setSelectedCustomer] = React.useState<Customer | null>(null);
+  const [mergeSourceCustomer, setMergeSourceCustomer] = React.useState<Customer | null>(null);
+  const [mergeTargetId, setMergeTargetId] = React.useState('');
+  const [mergeSearch, setMergeSearch] = React.useState('');
 
   React.useEffect(() => {
     if (getOfflineFallbackActive()) {
       setCustomers(offlineDb.getCustomers());
       return;
     }
-    const q = query(collection(db, 'customers'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const customersQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+      ? query(collection(db, 'customers'), where('companyId', '==', companyId))
+      : query(collection(db, 'customers'));
+    const unsubscribe = onSnapshot(customersQuery, (snapshot) => {
       const customersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -98,7 +103,7 @@ export default function CustomersManager({
       setCustomers(offlineDb.getCustomers());
     });
     return () => unsubscribe();
-  }, []);
+  }, [companyId]);
 
   React.useEffect(() => {
     const handleSync = () => {
@@ -333,6 +338,105 @@ export default function CustomersManager({
   const approvedCustomers = companyCustomers.filter(c => c.status !== 'pending');
   const pendingCustomers = companyCustomers.filter(c => c.status === 'pending');
 
+  const mergeCandidates = React.useMemo(() => {
+    if (!mergeSourceCustomer) return [];
+    const term = mergeSearch.trim().toLowerCase();
+
+    return approvedCustomers
+      .filter(customer => customer.id !== mergeSourceCustomer.id)
+      .filter(customer => {
+        const hasDirectMatch =
+          Boolean(mergeSourceCustomer.cedula && customer.cedula === mergeSourceCustomer.cedula) ||
+          Boolean(mergeSourceCustomer.phone && customer.phone === mergeSourceCustomer.phone) ||
+          Boolean(mergeSourceCustomer.email && customer.email?.toLowerCase() === mergeSourceCustomer.email.toLowerCase());
+
+        if (!term) return hasDirectMatch || approvedCustomers.length <= 8;
+
+        return customer.name.toLowerCase().includes(term) ||
+          (customer.phone || '').toLowerCase().includes(term) ||
+          (customer.cedula || '').toLowerCase().includes(term) ||
+          (customer.email || '').toLowerCase().includes(term);
+      })
+      .slice(0, 10);
+  }, [approvedCustomers, mergeSearch, mergeSourceCustomer]);
+
+  const openMergeCustomer = (customer: Customer) => {
+    setMergeSourceCustomer(customer);
+    setMergeTargetId('');
+    setMergeSearch(customer.cedula || customer.phone || customer.email || customer.name || '');
+  };
+
+  const handleMergeCustomer = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!mergeSourceCustomer || !mergeTargetId) return;
+
+    const targetCustomer = companyCustomers.find(customer => customer.id === mergeTargetId);
+    if (!targetCustomer) {
+      alert('Selecciona un cliente existente para fusionar.');
+      return;
+    }
+
+    if (!confirm(`Fusionar la solicitud de "${mergeSourceCustomer.name}" con "${targetCustomer.name}"?`)) return;
+
+    if (getOfflineFallbackActive()) {
+      alert('La fusión de clientes requiere conexión a internet.');
+      return;
+    }
+
+    try {
+      const batch = writeBatch(db);
+      const targetRef = doc(db, 'customers', targetCustomer.id);
+      const sourceRef = doc(db, 'customers', mergeSourceCustomer.id);
+      const targetCompanyId = targetCustomer.companyId || mergeSourceCustomer.companyId || companyId;
+
+      const targetUpdate: any = {
+        status: 'active',
+        totalSpent: (targetCustomer.totalSpent || 0) + (mergeSourceCustomer.totalSpent || 0),
+        currentDebt: (targetCustomer.currentDebt || 0) + (mergeSourceCustomer.currentDebt || 0),
+      };
+
+      if (mergeSourceCustomer.authUid) targetUpdate.authUid = mergeSourceCustomer.authUid;
+      if (!targetCustomer.email && mergeSourceCustomer.email) targetUpdate.email = mergeSourceCustomer.email;
+      if (!targetCustomer.phone && mergeSourceCustomer.phone) targetUpdate.phone = mergeSourceCustomer.phone;
+      if (!targetCustomer.cedula && mergeSourceCustomer.cedula) targetUpdate.cedula = mergeSourceCustomer.cedula;
+      if (!targetCustomer.address && mergeSourceCustomer.address) targetUpdate.address = mergeSourceCustomer.address;
+      if (!targetCustomer.logisticsLocationId && mergeSourceCustomer.logisticsLocationId) targetUpdate.logisticsLocationId = mergeSourceCustomer.logisticsLocationId;
+      if (!targetCustomer.city && mergeSourceCustomer.city) targetUpdate.city = mergeSourceCustomer.city;
+      if (!targetCustomer.province && mergeSourceCustomer.province) targetUpdate.province = mergeSourceCustomer.province;
+      if (!targetCustomer.companyId && targetCompanyId) targetUpdate.companyId = targetCompanyId;
+      if (mergeSourceCustomer.lastPurchase) targetUpdate.lastPurchase = mergeSourceCustomer.lastPurchase;
+
+      batch.update(targetRef, targetUpdate);
+
+      if (targetCompanyId) {
+        const relatedOrdersQuery = query(
+          collection(db, 'orders'),
+          where('companyId', '==', targetCompanyId),
+          where('customerId', '==', mergeSourceCustomer.id)
+        );
+        const relatedOrders = await getDocs(relatedOrdersQuery);
+        relatedOrders.docs.forEach(orderDoc => {
+          batch.update(doc(db, 'orders', orderDoc.id), {
+            customerId: targetCustomer.id,
+            customerName: targetCustomer.name,
+            customerPhone: targetCustomer.phone || mergeSourceCustomer.phone || null,
+            customerCedula: targetCustomer.cedula || mergeSourceCustomer.cedula || null,
+          });
+        });
+      }
+
+      batch.delete(sourceRef);
+      await batch.commit();
+
+      setMergeSourceCustomer(null);
+      setMergeTargetId('');
+      setMergeSearch('');
+      alert('Cliente fusionado exitosamente.');
+    } catch (error) {
+      alert('Error al fusionar cliente: ' + error);
+    }
+  };
+
   const filteredCustomers = (activeTab === 'approved' ? approvedCustomers : pendingCustomers).filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     (c.email || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -511,11 +615,18 @@ export default function CustomersManager({
                       <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block">Solicitud de Registro</span>
                       <div className="flex gap-2">
                         <button
+                          onClick={() => openMergeCustomer(customer)}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1 transition-all active:scale-95"
+                        >
+                          <GitMerge size={13} />
+                          <span>Fusionar</span>
+                        </button>
+                        <button
                           onClick={() => handleOpenEdit(customer)}
                           className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1 transition-all active:scale-95"
                         >
                           <Check size={13} />
-                          <span>Aprobar (Ingresar Cédula)</span>
+                          <span>Aprobar</span>
                         </button>
                         <button
                           onClick={() => handleDeleteCustomer(customer.id, customer.name)}
@@ -561,6 +672,113 @@ export default function CustomersManager({
 
       {/* Edit Customer Dialog */}
       <AnimatePresence>
+        {mergeSourceCustomer && (
+          <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+            <motion.form
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onSubmit={handleMergeCustomer}
+              className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-5"
+            >
+              <div className="flex justify-between items-start border-b border-stone-100 pb-4">
+                <div>
+                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                    <GitMerge size={13} />
+                    Fusionar cliente
+                  </p>
+                  <h3 className="font-serif font-bold text-stone-900 text-lg mt-1">
+                    {mergeSourceCustomer.name}
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-1">
+                    Selecciona el cliente existente que conservara el historial y recibira el acceso digital.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMergeSourceCustomer(null)}
+                  className="p-1 hover:bg-stone-50 rounded-full text-stone-400"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-3 text-xs text-amber-900">
+                <p className="font-bold">Solicitud pendiente</p>
+                <p className="mt-1">
+                  {mergeSourceCustomer.email || 'Sin email'} · {mergeSourceCustomer.phone || 'Sin telefono'} · {mergeSourceCustomer.city || 'Sin ciudad'}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Buscar cliente existente</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={15} />
+                  <input
+                    type="text"
+                    value={mergeSearch}
+                    onChange={e => setMergeSearch(e.target.value)}
+                    placeholder="Nombre, cedula, telefono o email"
+                    className="w-full pl-9 pr-3 py-2.5 border border-stone-150 rounded-xl bg-stone-50 focus:bg-white text-xs outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto rounded-xl border border-stone-100 divide-y divide-stone-100">
+                {mergeCandidates.map(candidate => (
+                  <label
+                    key={candidate.id}
+                    className={`flex cursor-pointer items-start gap-3 p-3 transition-colors hover:bg-stone-50 ${mergeTargetId === candidate.id ? 'bg-blue-50/60' : 'bg-white'}`}
+                  >
+                    <input
+                      type="radio"
+                      name="mergeTarget"
+                      value={candidate.id}
+                      checked={mergeTargetId === candidate.id}
+                      onChange={() => setMergeTargetId(candidate.id)}
+                      className="mt-1 h-4 w-4"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold text-stone-900">{candidate.name}</span>
+                      <span className="mt-0.5 block text-[11px] text-stone-500">
+                        {candidate.cedula || 'Sin cedula'} · {candidate.phone || 'Sin telefono'} · {candidate.email || 'Sin email'}
+                      </span>
+                      {candidate.city && (
+                        <span className="mt-0.5 block text-[10px] font-medium text-stone-400">
+                          {candidate.province ? `${candidate.province} / ${candidate.city}` : candidate.city}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+                {mergeCandidates.length === 0 && (
+                  <div className="p-5 text-center text-xs text-stone-400">
+                    No hay clientes existentes que coincidan.
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMergeSourceCustomer(null)}
+                  className="flex-1 py-2 text-stone-500 font-bold hover:bg-stone-50 rounded-xl text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={!mergeTargetId}
+                  className="flex-[2] py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1"
+                >
+                  <GitMerge size={14} />
+                  Fusionar con seleccionado
+                </button>
+              </div>
+            </motion.form>
+          </div>
+        )}
+
         {isEditing && (
           <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
             <motion.form 

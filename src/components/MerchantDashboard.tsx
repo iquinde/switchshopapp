@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { auth, db } from '../firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { 
   offlineDb, 
   getOfflineFallbackActive, 
@@ -98,7 +98,20 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
       } else {
         // Fetch from Firebase with fallback compatibility
         try {
-          unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
+          const productsQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+            ? query(collection(db, 'products'), where('companyId', '==', companyId))
+            : collection(db, 'products');
+          const ordersQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+            ? query(collection(db, 'orders'), where('companyId', '==', companyId))
+            : collection(db, 'orders');
+          const customersQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+            ? query(collection(db, 'customers'), where('companyId', '==', companyId))
+            : collection(db, 'customers');
+          const purchasesQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+            ? query(collection(db, 'purchases'), where('companyId', '==', companyId))
+            : collection(db, 'purchases');
+
+          unsubProducts = onSnapshot(productsQuery, (snapshot) => {
             if (!active) return;
             const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
             setProducts(items);
@@ -109,7 +122,7 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
             }
           });
 
-          unsubOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
+          unsubOrders = onSnapshot(ordersQuery, (snapshot) => {
             if (!active) return;
             const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
             setOrders(items);
@@ -119,7 +132,7 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
             }
           });
 
-          unsubCustomers = onSnapshot(collection(db, 'customers'), (snapshot) => {
+          unsubCustomers = onSnapshot(customersQuery, (snapshot) => {
             if (!active) return;
             const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer));
             setCustomers(items);
@@ -129,7 +142,7 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
             }
           });
 
-          unsubPurchases = onSnapshot(collection(db, 'purchases'), (snapshot) => {
+          unsubPurchases = onSnapshot(purchasesQuery, (snapshot) => {
             if (!active) return;
             const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Purchase));
             setPurchases(items);
@@ -167,7 +180,7 @@ const MerchantDashboard: React.FC<MerchantDashboardProps> = ({ onNavigate, compa
       if (unsubCustomers) unsubCustomers();
       if (unsubPurchases) unsubPurchases();
     };
-  }, []);
+  }, [companyId]);
 
   const getRecordDate = React.useCallback((value: any): Date | null => {
     if (!value) return null;

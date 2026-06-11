@@ -55,6 +55,26 @@ service cloud.firestore {
              hasActiveCompanyRole(companyId);
     }
 
+    function isActiveCompany(companyId) {
+      return companyId is string &&
+             exists(/databases/$(database)/documents/companies/$(companyId)) &&
+             get(/databases/$(database)/documents/companies/$(companyId)).data.status == 'active';
+    }
+
+    function isOwnCustomerRecord(data) {
+      return isAuthenticated() &&
+             data.authUid is string &&
+             data.authUid == request.auth.uid;
+    }
+
+    function isOwnOrderCustomer(data) {
+      return isAuthenticated() &&
+             data.customerId is string &&
+             exists(/databases/$(database)/documents/customers/$(data.customerId)) &&
+             get(/databases/$(database)/documents/customers/$(data.customerId)).data.authUid == request.auth.uid &&
+             get(/databases/$(database)/documents/customers/$(data.customerId)).data.companyId == data.companyId;
+    }
+
     function hasRequiredFields(data, fields) {
       return data.keys().hasAll(fields);
     }
@@ -104,8 +124,9 @@ service cloud.firestore {
     // Customer Validator
     function isValidCustomer(data) {
       return hasRequiredFields(data, ['name']) &&
-             hasOnlyAllowedFields(data, ['id', 'name', 'phone', 'address', 'logisticsLocationId', 'city', 'province', 'totalSpent', 'currentDebt', 'createdAt', 'lastPurchase', 'email', 'creditLimit', 'companyId', 'status', 'cedula']) &&
+             hasOnlyAllowedFields(data, ['id', 'authUid', 'name', 'phone', 'address', 'logisticsLocationId', 'city', 'province', 'totalSpent', 'currentDebt', 'createdAt', 'lastPurchase', 'email', 'creditLimit', 'companyId', 'status', 'cedula']) &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (!('authUid' in data) || data.authUid == null || (data.authUid is string && data.authUid.size() <= 128)) &&
              (!('phone' in data) || data.phone == null || (data.phone is string && data.phone.size() <= 30)) &&
              (!('address' in data) || data.address == null || (data.address is string && data.address.size() <= 200)) &&
              (!('logisticsLocationId' in data) || data.logisticsLocationId == null || (data.logisticsLocationId is string && data.logisticsLocationId.size() <= 100)) &&
@@ -264,14 +285,53 @@ service cloud.firestore {
     }
 
     match /customers/{customerId} {
-      allow read, list, create, update: if true;
-      allow delete: if isAdmin();
+      allow read: if isAdmin() || isCompanyMember(resource.data.companyId) || isOwnCustomerRecord(resource.data);
+      allow create: if isValidCustomer(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      isCompanyMember(request.resource.data.companyId) ||
+                      (
+                        isOwnCustomerRecord(request.resource.data) &&
+                        isActiveCompany(request.resource.data.companyId) &&
+                        request.resource.data.status == 'pending'
+                      )
+                    );
+      allow update: if isValidCustomer(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      isCompanyMember(resource.data.companyId) ||
+                      isCompanyMember(request.resource.data.companyId) ||
+                      (
+                        isOwnCustomerRecord(resource.data) &&
+                        isOwnCustomerRecord(request.resource.data) &&
+                        request.resource.data.companyId == resource.data.companyId &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                          'name',
+                          'phone',
+                          'address',
+                          'logisticsLocationId',
+                          'city',
+                          'province',
+                          'email',
+                          'cedula',
+                          'lastPurchase'
+                        ])
+                      )
+                    );
+      allow delete: if isAdmin() || isCompanyMember(resource.data.companyId);
     }
 
     match /orders/{orderId} {
-      allow get: if true;
-      allow list: if isAdmin();
-      allow create: if isValidOrder(request.resource.data);
+      allow read: if isAdmin() || isCompanyMember(resource.data.companyId);
+      allow create: if isValidOrder(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      isCompanyMember(request.resource.data.companyId) ||
+                      (
+                        isActiveCompany(request.resource.data.companyId) &&
+                        isOwnOrderCustomer(request.resource.data)
+                      )
+                    );
       allow update: if isAdmin() ||
                       (
                         isCompanyMember(resource.data.companyId) &&

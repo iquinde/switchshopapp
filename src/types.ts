@@ -21,6 +21,7 @@ export interface CartItem extends Product {
 
 export interface Customer {
   id: string;
+  authUid?: string;
   name: string;
   email?: string;
   phone?: string;

@@ -214,8 +214,10 @@ export default function OrdersManager({
   // Listen to orders
   React.useEffect(() => {
     if (isOfflineMode) return;
-    const q = query(collection(db, 'orders'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const ordersQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+      ? query(collection(db, 'orders'), where('companyId', '==', companyId))
+      : query(collection(db, 'orders'));
+    const unsubscribe = onSnapshot(ordersQuery, (snapshot) => {
       const ordersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -233,12 +235,15 @@ export default function OrdersManager({
       setOfflineFallbackActive(true);
     });
     return () => unsubscribe();
-  }, [isOfflineMode]);
+  }, [companyId, isOfflineMode]);
 
   // Listen to customers
   React.useEffect(() => {
     if (isOfflineMode) return;
-    const unsubscribe = onSnapshot(collection(db, 'customers'), (snapshot) => {
+    const customersQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+      ? query(collection(db, 'customers'), where('companyId', '==', companyId))
+      : query(collection(db, 'customers'));
+    const unsubscribe = onSnapshot(customersQuery, (snapshot) => {
       const customersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -249,7 +254,7 @@ export default function OrdersManager({
       setOfflineFallbackActive(true);
     });
     return () => unsubscribe();
-  }, [isOfflineMode]);
+  }, [companyId, isOfflineMode]);
 
   // Filter orders by active company context first
   const companyOrders = orders.filter(matchesActiveCompany);
