@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Edit2, Plus, Save, ShieldCheck, Trash2, X } from 'lucide-react';
 import { collection, deleteDoc, doc, onSnapshot, query, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -82,8 +82,8 @@ export default function UsersManager({ companies }: UsersManagerProps) {
       return;
     }
 
-    if (roleType !== 'super_admin' && !roleCompanyId) {
-      alert('Selecciona una empresa para este rol.');
+    if (roleType !== 'super_admin' && roleStatus === 'active' && !roleCompanyId) {
+      alert('Selecciona una empresa antes de activar este usuario.');
       return;
     }
 
@@ -94,7 +94,7 @@ export default function UsersManager({ companies }: UsersManagerProps) {
       firstName,
       lastName,
       role: roleType,
-      companyId: roleType === 'super_admin' ? null : roleCompanyId,
+      companyId: roleType === 'super_admin' ? null : (roleCompanyId || null),
       status: roleStatus,
       createdAt: existingRole?.createdAt || now,
       updatedAt: now,
@@ -132,7 +132,7 @@ export default function UsersManager({ companies }: UsersManagerProps) {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 px-1">
         <div>
           <h2 className="text-xl sm:text-3xl font-serif font-bold text-stone-900">Usuarios</h2>
-          <p className="text-stone-500 text-xs sm:text-sm">Administra permisos globales o por empresa para cuentas Google verificadas.</p>
+          <p className="text-stone-500 text-xs sm:text-sm">Administra permisos globales o por empresa para cuentas registradas.</p>
         </div>
         <button
           type="button"
@@ -164,7 +164,7 @@ export default function UsersManager({ companies }: UsersManagerProps) {
                     <p className="font-mono text-xs font-bold text-stone-800 truncate">{role.email}</p>
                     <p className="text-[11px] text-stone-500 mt-1">
                       {role.role === 'super_admin' ? 'Super admin' : role.role === 'company_admin' ? 'Admin empresa' : 'Colaborador'}
-                      {company ? ` - ${company.storeName}` : ''}
+                      {company ? ` - ${company.storeName}` : role.role === 'super_admin' ? '' : ' - Sin empresa'}
                     </p>
                     <span className={`inline-flex mt-2 text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full ${
                       role.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
@@ -221,7 +221,7 @@ export default function UsersManager({ companies }: UsersManagerProps) {
             <form onSubmit={handleSaveRole} className="p-6 overflow-y-auto space-y-4">
               <div>
                 <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
-                  Email de Cuenta Google <span className="text-red-500">*</span>
+                  Email de la cuenta <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="email"
@@ -301,7 +301,7 @@ export default function UsersManager({ companies }: UsersManagerProps) {
 
               <div>
                 <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block mb-1">
-                  Empresa asociada {roleType !== 'super_admin' && <span className="text-red-500">*</span>}
+                  Empresa asociada {roleType !== 'super_admin' && roleStatus === 'active' && <span className="text-red-500">*</span>}
                 </label>
                 <select
                   value={roleCompanyId}
@@ -309,7 +309,7 @@ export default function UsersManager({ companies }: UsersManagerProps) {
                   disabled={roleType === 'super_admin'}
                   className="w-full px-3 py-2 border border-stone-200 bg-white rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-bold disabled:bg-stone-50 disabled:text-stone-400"
                 >
-                  <option value="">{roleType === 'super_admin' ? 'No aplica para Super admin' : 'Selecciona una empresa'}</option>
+                  <option value="">{roleType === 'super_admin' ? 'No aplica para Super admin' : roleStatus === 'active' ? 'Selecciona una empresa' : 'Sin empresa asignada'}</option>
                   {companies.filter(company => company.id !== 'comp-default').map(company => (
                     <option key={company.id} value={company.id}>{company.storeName}</option>
                   ))}
@@ -346,3 +346,4 @@ export default function UsersManager({ companies }: UsersManagerProps) {
     </div>
   );
 }
+

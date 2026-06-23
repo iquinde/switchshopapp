@@ -95,7 +95,7 @@ service cloud.firestore {
              (!('minStock' in data) || data.minStock == null || (data.minStock is number && data.minStock >= 0)) &&
              (!('status' in data) || data.status == null || (data.status in ['active', 'inactive'])) &&
              (!('sku' in data) || data.sku == null || (data.sku is string && data.sku.size() <= 50)) &&
-             data.image is string && (data.image.matches("^https://.*") || data.image.matches("^http://.*") || data.image.matches("^data:image/.*")) &&
+             data.image is string && (data.image == '' || data.image.matches("^https://.*") || data.image.matches("^http://.*") || data.image.matches("^data:image/.*")) &&
              (!('images' in data) || data.images == null || (data.images is list && data.images.size() <= 10)) &&
              data.category is string && data.category.size() > 0 && data.category.size() <= 100 &&
              (!('companyId' in data) || data.companyId == null || (data.companyId is string && data.companyId.size() <= 100));
@@ -104,13 +104,16 @@ service cloud.firestore {
     // Settings Validator
     function isValidSettings(data) {
       return hasRequiredFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroImage', 'footerText']) &&
-             hasOnlyAllowedFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroImage', 'logoImage', 'footerText', 'socialLinks', 'heroBgType', 'heroBgColor', 'heroTextColor', 'stockAlertPercentage', 'supportPhone', 'supportEmail', 'whatsappNumber']) &&
+             hasOnlyAllowedFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroBadgeText', 'productSectionTitle', 'productSectionDescription', 'heroImage', 'logoImage', 'footerText', 'socialLinks', 'heroBgType', 'heroBgColor', 'heroTextColor', 'stockAlertPercentage', 'supportPhone', 'supportEmail', 'whatsappNumber']) &&
              data.storeName is string && data.storeName.size() > 0 && data.storeName.size() <= 100 &&
              data.heroTitle is string && data.heroTitle.size() > 0 && data.heroTitle.size() <= 200 &&
              data.heroSubtitle is string && data.heroSubtitle.size() > 0 && data.heroSubtitle.size() <= 1000 &&
-             data.heroImage is string && (data.heroImage.matches("^https://.*") || data.heroImage.matches("^http://.*")) &&
+             (!('heroBadgeText' in data) || data.heroBadgeText == null || (data.heroBadgeText is string && data.heroBadgeText.size() <= 120)) &&
+             (!('productSectionTitle' in data) || data.productSectionTitle == null || (data.productSectionTitle is string && data.productSectionTitle.size() > 0 && data.productSectionTitle.size() <= 120)) &&
+             (!('productSectionDescription' in data) || data.productSectionDescription == null || (data.productSectionDescription is string && data.productSectionDescription.size() > 0 && data.productSectionDescription.size() <= 500)) &&
+             data.heroImage is string && (data.heroImage.matches("^https://.*") || data.heroImage.matches("^http://.*") || data.heroImage.matches("^data:image/.*")) &&
              (!('logoImage' in data) || data.logoImage == null || data.logoImage == '' || (data.logoImage is string && (data.logoImage.matches("^https://.*") || data.logoImage.matches("^http://.*")))) &&
-             data.footerText is string && data.footerText.size() > 0 && data.footerText.size() <= 200 &&
+             data.footerText is string && data.footerText.size() > 0 && data.footerText.size() <= 500 &&
              (!('socialLinks' in data) || data.socialLinks == null || data.socialLinks is map) &&
              (!('heroBgType' in data) || data.heroBgType == null || (data.heroBgType is string)) &&
              (!('heroBgColor' in data) || data.heroBgColor == null || (data.heroBgColor is string)) &&
@@ -168,10 +171,10 @@ service cloud.firestore {
              (!('tax' in data) || data.tax == null || (data.tax is number));
     }
 
-    function isValidOrderPaymentEdit() {
+    function isValidOrderWorkflowEdit() {
       return isValidOrder(request.resource.data) &&
              resource.data.companyId == request.resource.data.companyId &&
-             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentMethod', 'paymentStatus', 'amountPaid']);
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'dispatchStatus', 'paymentMethod', 'paymentStatus', 'amountPaid']);
     }
 
     // Payment Transaction Validator
@@ -229,8 +232,25 @@ service cloud.firestore {
              (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string) &&
              (
                (data.role == 'super_admin' && (!('companyId' in data) || data.companyId == null || data.companyId is string)) ||
-               (data.role in ['company_admin', 'company_staff'] && data.companyId is string && data.companyId.size() > 0 && data.companyId.size() <= 100)
+               (
+                 data.role in ['company_admin', 'company_staff'] &&
+                 (
+                   (data.status == 'active' && data.companyId is string && data.companyId.size() > 0 && data.companyId.size() <= 100) ||
+                   (data.status == 'inactive' && (!('companyId' in data) || data.companyId == null || (data.companyId is string && data.companyId.size() <= 100)))
+                 )
+               )
              );
+    }
+
+    function isSelfPendingUserRoleCreate(roleEmail) {
+      return isAuthenticated() &&
+             request.auth.token.email is string &&
+             request.auth.token.email == roleEmail &&
+             request.resource.data.email == roleEmail &&
+             request.resource.data.role == 'company_staff' &&
+             request.resource.data.status == 'inactive' &&
+             (!('companyId' in request.resource.data) || request.resource.data.companyId == null) &&
+             isValidUserRole(request.resource.data);
     }
 
     // Client Error Log Validator
@@ -335,10 +355,10 @@ service cloud.firestore {
       allow update: if isAdmin() ||
                       (
                         isCompanyMember(resource.data.companyId) &&
-                        isValidOrderPaymentEdit()
+                        isValidOrderWorkflowEdit()
                       ) ||
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['items', 'stock']));
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isCompanyMember(resource.data.companyId);
     }
 
     match /paymentTransactions/{transactionId} {
@@ -383,9 +403,14 @@ service cloud.firestore {
                      request.auth.token.email == roleEmail
                    );
       allow list: if isAdmin();
-      allow create, update: if isAdmin() &&
-                              request.resource.data.email == roleEmail &&
-                              isValidUserRole(request.resource.data);
+      allow create: if (
+                      isAdmin() &&
+                      request.resource.data.email == roleEmail &&
+                      isValidUserRole(request.resource.data)
+                    ) || isSelfPendingUserRoleCreate(roleEmail);
+      allow update: if isAdmin() &&
+                      request.resource.data.email == roleEmail &&
+                      isValidUserRole(request.resource.data);
       allow delete: if isAdmin();
     }
 

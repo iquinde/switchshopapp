@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import Navbar from './components/Navbar';
 import Cart from './components/Cart';
 import ProductDetail from './components/ProductDetail';
@@ -7,7 +7,7 @@ import CatalogView from './components/CatalogView';
 import ErrorBoundary from './components/ErrorBoundary';
 import ToastHost from './components/ToastHost';
 import { db, auth, googleProvider } from './firebase';
-import { addDoc, collection, getDocs, limit, onSnapshot, query, doc, serverTimestamp, where } from 'firebase/firestore';
+import { addDoc, collection, getDoc, getDocs, limit, onSnapshot, query, doc, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -45,12 +45,12 @@ function getAuthErrorMessage(error: unknown) {
       'auth/popup-blocked': 'El navegador bloqueo la ventana de inicio de sesion. Permite popups para esta pagina o intenta de nuevo.',
       'auth/cancelled-popup-request': 'Se cancelo una solicitud de inicio de sesion anterior. Intenta nuevamente.',
       'auth/invalid-email': 'Ingresa un correo valido.',
-      'auth/missing-password': 'Ingresa tu contraseña.',
-      'auth/invalid-credential': 'El usuario o la contraseña no son correctos.',
+      'auth/missing-password': 'Ingresa tu contraseÃ±a.',
+      'auth/invalid-credential': 'El usuario o la contraseÃ±a no son correctos.',
       'auth/user-not-found': 'No existe una cuenta registrada con ese correo.',
-      'auth/wrong-password': 'La contraseña no es correcta.',
+      'auth/wrong-password': 'La contraseÃ±a no es correcta.',
       'auth/email-already-in-use': 'Ya existe una cuenta registrada con ese correo.',
-      'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
+      'auth/weak-password': 'La contraseÃ±a debe tener al menos 6 caracteres.',
       'auth/too-many-requests': 'Demasiados intentos. Espera un momento e intenta nuevamente.',
       'auth/network-request-failed': 'No se pudo conectar con Firebase. Revisa tu conexion e intenta de nuevo.',
     };
@@ -89,12 +89,12 @@ function LoginScreen({
     }
 
     if (!password) {
-      setLocalError('Ingresa tu contraseña.');
+      setLocalError('Ingresa tu contraseÃ±a.');
       return;
     }
 
     if (isRegisterMode && password !== confirmPassword) {
-      setLocalError('Las contraseñas no coinciden.');
+      setLocalError('Las contraseÃ±as no coinciden.');
       return;
     }
 
@@ -117,7 +117,7 @@ function LoginScreen({
 
     try {
       await onForgotPassword(email);
-      setLocalMessage('Te enviamos un enlace para recuperar la contraseña.');
+      setLocalMessage('Te enviamos un enlace para recuperar la contraseÃ±a.');
     } catch {
       // The parent handler already maps the Firebase error into loginError.
     }
@@ -162,7 +162,7 @@ function LoginScreen({
                   {isRegisterMode ? 'Crear cuenta' : 'Iniciar sesion'}
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-white/62 lg:text-stone-500">
-                  Ingresa con usuario y contraseña, o usa tu cuenta de Google para acceder al sistema.
+                  Ingresa con usuario y contraseÃ±a, o usa tu cuenta de Google para acceder al sistema.
                 </p>
               </div>
 
@@ -216,7 +216,7 @@ function LoginScreen({
                 </label>
 
                 <label className="block">
-                  <span className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-white/50 lg:text-stone-400">Contraseña</span>
+                  <span className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-white/50 lg:text-stone-400">ContraseÃ±a</span>
                   <div className="flex h-12 items-center gap-3 rounded-lg border border-white/10 bg-white px-3 text-stone-950 shadow-sm lg:border-stone-200">
                     <KeyRound size={18} className="shrink-0 text-stone-400" />
                     <input
@@ -224,7 +224,7 @@ function LoginScreen({
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
                       autoComplete={isRegisterMode ? 'new-password' : 'current-password'}
-                      placeholder="Tu contraseña"
+                      placeholder="Tu contraseÃ±a"
                       className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-stone-400"
                     />
                   </div>
@@ -232,7 +232,7 @@ function LoginScreen({
 
                 {isRegisterMode && (
                   <label className="block">
-                    <span className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-white/50 lg:text-stone-400">Confirmar contraseña</span>
+                    <span className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-white/50 lg:text-stone-400">Confirmar contraseÃ±a</span>
                     <div className="flex h-12 items-center gap-3 rounded-lg border border-white/10 bg-white px-3 text-stone-950 shadow-sm lg:border-stone-200">
                       <KeyRound size={18} className="shrink-0 text-stone-400" />
                       <input
@@ -240,7 +240,7 @@ function LoginScreen({
                         value={confirmPassword}
                         onChange={(event) => setConfirmPassword(event.target.value)}
                         autoComplete="new-password"
-                        placeholder="Repite tu contraseña"
+                        placeholder="Repite tu contraseÃ±a"
                         className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-stone-400"
                       />
                     </div>
@@ -264,7 +264,7 @@ function LoginScreen({
                   disabled={isLoggingIn}
                   className="w-full text-center text-sm font-bold text-emerald-300 transition-colors hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-70 lg:text-emerald-700 lg:hover:text-emerald-800"
                 >
-                  Olvide mi contraseña
+                  Olvide mi contraseÃ±a
                 </button>
               )}
 
@@ -407,11 +407,11 @@ function StoreCustomerAuthModal({
       return;
     }
     if (!password) {
-      setLocalError('Ingresa tu contraseña.');
+      setLocalError('Ingresa tu contraseÃ±a.');
       return;
     }
     if (isRegisterMode && password !== confirmPassword) {
-      setLocalError('Las contraseñas no coinciden.');
+      setLocalError('Las contraseÃ±as no coinciden.');
       return;
     }
     if (isRegisterMode && !selectedLocation) {
@@ -435,7 +435,7 @@ function StoreCustomerAuthModal({
     }
     try {
       await onForgotPassword(email);
-      setLocalMessage('Te enviamos un enlace para recuperar la contraseña.');
+      setLocalMessage('Te enviamos un enlace para recuperar la contraseÃ±a.');
     } catch {
       // Firebase error is shown through loginError.
     }
@@ -561,7 +561,7 @@ function StoreCustomerAuthModal({
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-stone-400">Contraseña</span>
+            <span className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-stone-400">ContraseÃ±a</span>
             <div className="flex h-12 items-center gap-3 rounded-lg border border-stone-200 bg-white px-3">
               <KeyRound size={18} className="text-stone-400" />
               <input
@@ -569,7 +569,7 @@ function StoreCustomerAuthModal({
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete={isRegisterMode ? 'new-password' : 'current-password'}
-                placeholder="Tu contraseña"
+                placeholder="Tu contraseÃ±a"
                 className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-stone-900 outline-none placeholder:text-stone-400"
               />
             </div>
@@ -577,7 +577,7 @@ function StoreCustomerAuthModal({
 
           {isRegisterMode && (
             <label className="block">
-              <span className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-stone-400">Confirmar contraseña</span>
+              <span className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-stone-400">Confirmar contraseÃ±a</span>
               <div className="flex h-12 items-center gap-3 rounded-lg border border-stone-200 bg-white px-3">
                 <KeyRound size={18} className="text-stone-400" />
                 <input
@@ -585,7 +585,7 @@ function StoreCustomerAuthModal({
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
                   autoComplete="new-password"
-                  placeholder="Repite tu contraseña"
+                  placeholder="Repite tu contraseÃ±a"
                   className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-stone-900 outline-none placeholder:text-stone-400"
                 />
               </div>
@@ -609,7 +609,7 @@ function StoreCustomerAuthModal({
             disabled={isLoggingIn}
             className="mt-3 w-full text-center text-sm font-bold text-primary transition-colors hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            Olvide mi contraseña
+            Olvide mi contraseÃ±a
           </button>
         )}
 
@@ -653,6 +653,33 @@ function StoreCustomerAuthModal({
 
 const STORE_ROUTE_PREFIX = 'tienda';
 const STORE_SECTION_SLUGS = new Set(['inicio', 'productos', 'nosotros', 'contacto']);
+type AuthEntryContext = 'private' | 'store';
+const AUTH_ENTRY_CONTEXT_KEY = 'switchshop.authEntryContext';
+
+function setAuthEntryContext(context: AuthEntryContext) {
+  try {
+    window.sessionStorage.setItem(AUTH_ENTRY_CONTEXT_KEY, context);
+  } catch {
+    // Session storage can be unavailable in restricted browsers.
+  }
+}
+
+function getAuthEntryContext(): AuthEntryContext | null {
+  try {
+    const value = window.sessionStorage.getItem(AUTH_ENTRY_CONTEXT_KEY);
+    return value === 'private' || value === 'store' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearAuthEntryContext() {
+  try {
+    window.sessionStorage.removeItem(AUTH_ENTRY_CONTEXT_KEY);
+  } catch {
+    // Session storage can be unavailable in restricted browsers.
+  }
+}
 
 function isStorefrontRoute() {
   const searchParams = new URLSearchParams(window.location.search);
@@ -686,11 +713,11 @@ export default function App() {
   const [isOfflineMode, setIsOfflineMode] = React.useState(getOfflineFallbackActive());
   const [settings, setSettings] = React.useState<StoreSettings>({
     storeName: 'SwitchShop',
-    heroTitle: 'Calidad y Tradición Hecha a Mano.',
-    heroSubtitle: 'Descubre nuestra cuidada selección de café premium de especialidad y piezas de joyería artesanal única. Cultivados y creados con dedicación para deleitar tus sentidos.',
+    heroTitle: 'Calidad y TradiciÃ³n Hecha a Mano.',
+    heroSubtitle: 'Descubre nuestra cuidada selecciÃ³n de cafÃ© premium de especialidad y piezas de joyerÃ­a artesanal Ãºnica. Cultivados y creados con dedicaciÃ³n para deleitar tus sentidos.',
     heroImage: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=2000',
     logoImage: '',
-    footerText: 'Productos seleccionados con alma, sabor y tradición.',
+    footerText: 'Productos seleccionados con alma, sabor y tradiciÃ³n.',
     socialLinks: {
       instagram: { enabled: false, url: '' },
       facebook: { enabled: false, url: '' },
@@ -775,7 +802,7 @@ export default function App() {
     nameOverride = '',
     location?: LogisticsLocation | null
   ) => {
-    if (!customerUser || !activeCompany || activeCompany.id === 'comp-default') {
+    if (getAuthEntryContext() !== 'store' || !customerUser || !activeCompany || activeCompany.id === 'comp-default') {
       setStoreCustomerId(null);
       return null;
     }
@@ -838,7 +865,7 @@ export default function App() {
   }, [companies, parseCompanyFromUrl]);
 
   React.useEffect(() => {
-    if (!isAuthReady || !isClientStoreRoute || !user || !activeCompany) {
+    if (!isAuthReady || !isClientStoreRoute || !user || !activeCompany || getAuthEntryContext() !== 'store') {
       setStoreCustomerId(null);
       return;
     }
@@ -877,7 +904,7 @@ export default function App() {
         ...settings,
         storeName: settings.storeName || activeCompany.storeName,
         heroTitle: settings.heroTitle || activeCompany.storeName,
-        heroSubtitle: settings.heroSubtitle || activeCompany.description || 'Te damos la bienvenida a nuestra tienda virtual. Descubre los mejores productos seleccionados y gestionados con dedicación.',
+        heroSubtitle: settings.heroSubtitle || activeCompany.description || 'Te damos la bienvenida a nuestra tienda virtual. Descubre los mejores productos seleccionados y gestionados con dedicaciÃ³n.',
         footerText: settings.footerText || `Productos de ${activeCompany.storeName}. Calidad y buen servicio garantizado.`,
         supportPhone: settings.supportPhone || activeCompany.phone || undefined,
         supportEmail: settings.supportEmail || activeCompany.email || undefined,
@@ -1110,7 +1137,7 @@ export default function App() {
           setSettings({
             storeName: activeCompany.storeName,
             heroTitle: activeCompany.storeName,
-            heroSubtitle: activeCompany.description || 'Te damos la bienvenida a nuestra tienda virtual. Descubre los mejores productos seleccionados y gestionados con dedicación.',
+            heroSubtitle: activeCompany.description || 'Te damos la bienvenida a nuestra tienda virtual. Descubre los mejores productos seleccionados y gestionados con dedicaciÃ³n.',
             heroImage: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=2000',
             logoImage: '',
             footerText: `Productos de ${activeCompany.storeName}. Calidad y buen servicio garantizado.`,
@@ -1140,13 +1167,40 @@ export default function App() {
     return () => unsubscribe();
   }, [canLoadStorefrontPublicly, isAuthReady, isOfflineMode, activeCompanyIdForSettings, activeCompany, user]);
 
+  const ensurePrivateUserRole = React.useCallback(async (currentUser: any, nameOverride = '') => {
+    const email = normalizeEmail(currentUser?.email);
+    if (!currentUser || !email || isOfflineMode) return;
+
+    const roleRef = doc(db, 'userRoles', email);
+    const roleSnap = await getDoc(roleRef);
+    if (roleSnap.exists()) return;
+
+    const displayName = (nameOverride || currentUser.displayName || '').trim();
+    const nameParts = displayName.split(/\s+/).filter(Boolean);
+    const fallbackName = email.split('@')[0] || 'Usuario';
+    const now = new Date().toISOString();
+    const pendingRole: UserRoleRecord = {
+      email,
+      firstName: nameParts[0] || fallbackName,
+      lastName: nameParts.slice(1).join(' ') || 'Pendiente',
+      role: 'company_staff',
+      companyId: null,
+      status: 'inactive',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await setDoc(roleRef, pendingRole);
+  }, [isOfflineMode]);
   const loginWithGoogle = async () => {
+    setAuthEntryContext('private');
     setIsLoggingIn(true);
     setLoginError('');
 
     try {
       googleProvider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, googleProvider);
+      await ensurePrivateUserRole(result.user);
       setUser(result.user);
       setIsAuthReady(true);
       setIsLoggingIn(false);
@@ -1159,11 +1213,13 @@ export default function App() {
   };
 
   const loginWithPassword = async (email: string, password: string) => {
+    setAuthEntryContext('private');
     setIsLoggingIn(true);
     setLoginError('');
 
     try {
       const result = await signInWithEmailAndPassword(auth, email.trim(), password);
+      await ensurePrivateUserRole(result.user);
       setUser(result.user);
       setIsAuthReady(true);
       setIsLoggingIn(false);
@@ -1176,6 +1232,7 @@ export default function App() {
   };
 
   const registerWithPassword = async (email: string, password: string, name = '') => {
+    setAuthEntryContext('private');
     setIsLoggingIn(true);
     setLoginError('');
 
@@ -1187,11 +1244,35 @@ export default function App() {
       if (!result.user.emailVerified) {
         await sendEmailVerification(result.user);
       }
+      await ensurePrivateUserRole(result.user, name);
       setUser(result.user);
       setIsAuthReady(true);
       setIsLoggingIn(false);
       setLoginError('');
     } catch (error) {
+      if (error instanceof FirebaseError && error.code === 'auth/email-already-in-use') {
+        try {
+          const result = await signInWithEmailAndPassword(auth, email.trim(), password);
+          await ensurePrivateUserRole(result.user, name);
+          setUser(result.user);
+          setIsAuthReady(true);
+          setIsLoggingIn(false);
+          setLoginError('');
+          return;
+        } catch (loginError) {
+          console.error("Existing Account Login Error", loginError);
+          try {
+            await sendPasswordResetEmail(auth, email.trim());
+            setLoginError('Ese correo ya existe en Firebase Auth. Te enviamos un enlace para recuperar la contraseña y luego entrar para solicitar acceso.');
+          } catch (resetError) {
+            console.error("Existing Account Password Reset Error", resetError);
+            setLoginError('Ese correo ya existe en Firebase Auth, pero no pudimos enviar el enlace de recuperación. Revisa que Email/Password esté habilitado en Firebase Authentication.');
+          }
+          setIsLoggingIn(false);
+          return;
+        }
+      }
+
       console.error("Register Error", error);
       setLoginError(getAuthErrorMessage(error));
       setIsLoggingIn(false);
@@ -1215,6 +1296,7 @@ export default function App() {
   };
 
   const loginStoreCustomerWithPassword = async (email: string, password: string) => {
+    setAuthEntryContext('store');
     setIsLoggingIn(true);
     setLoginError('');
 
@@ -1234,6 +1316,7 @@ export default function App() {
   };
 
   const registerStoreCustomerWithPassword = async (name: string, email: string, password: string, location?: LogisticsLocation | null) => {
+    setAuthEntryContext('store');
     setIsLoggingIn(true);
     setLoginError('');
 
@@ -1257,6 +1340,7 @@ export default function App() {
   };
 
   const loginStoreCustomerWithGoogle = async () => {
+    setAuthEntryContext('store');
     setIsLoggingIn(true);
     setLoginError('');
 
@@ -1279,6 +1363,7 @@ export default function App() {
   const logout = async () => {
     try {
       await signOut(auth);
+      clearAuthEntryContext();
       setIsMerchantMode(false);
       setProducts([]);
       setCompanies([]);
@@ -1442,7 +1527,7 @@ export default function App() {
                 loginWithGoogle();
               }}
               className="p-4 bg-white text-stone-600 rounded-full shadow-2xl hover:text-primary transition-all hover:scale-110 border border-stone-100"
-              title="Iniciar Sesión"
+              title="Iniciar SesiÃ³n"
             >
               <LogIn size={24} />
             </button>
@@ -1503,3 +1588,5 @@ export default function App() {
     </ErrorBoundary>
   );
 }
+
+

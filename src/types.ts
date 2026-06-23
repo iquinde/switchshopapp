@@ -132,6 +132,9 @@ export interface StoreSettings {
   storeName: string;
   heroTitle: string;
   heroSubtitle: string;
+  heroBadgeText?: string;
+  productSectionTitle?: string;
+  productSectionDescription?: string;
   heroImage: string;
   logoImage?: string;
   footerText: string;

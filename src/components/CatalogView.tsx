@@ -65,6 +65,8 @@ const CatalogView: React.FC<CatalogViewProps> = ({
 
   const displayStoreName = settings?.storeName || 'SwitchShop';
   const displayFooterText = settings?.footerText || 'Productos seleccionados con alma, sabor y tradición.';
+  const displayProductTitle = settings?.productSectionTitle || 'Nuestros Productos';
+  const displayProductDescription = settings?.productSectionDescription || 'Cada producto es seleccionado o creado con dedicación, garantizando la calidez de lo tradicional y la máxima calidad.';
   const socialLinks = settings?.socialLinks || {};
   const socialItems = [
     { key: 'instagram', label: 'Instagram', icon: Instagram, config: socialLinks.instagram },
@@ -80,10 +82,8 @@ const CatalogView: React.FC<CatalogViewProps> = ({
       <section id="productos" className="scroll-mt-24 py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
 
-          <h2 className="text-4xl md:text-5xl font-serif font-bold text-stone-900 mb-4">Nuestros Productos</h2>
-          <p className="text-stone-500 max-w-2xl mx-auto">
-            Cada producto es seleccionado o creado con dedicación, garantizando la calidez de lo tradicional y la máxima calidad.
-          </p>
+          <h2 className="text-4xl md:text-5xl font-serif font-bold text-stone-900 mb-4">{displayProductTitle}</h2>
+          <p className="text-stone-500 max-w-2xl mx-auto">{displayProductDescription}</p>
 
 
         </div>
