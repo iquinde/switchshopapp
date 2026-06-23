@@ -54,7 +54,7 @@ export default function Navbar({ cartCount, onCartClick, user, onLogin, onLogout
     window.history.pushState({}, '', nextPath);
     window.dispatchEvent(new PopStateEvent('popstate'));
 
-    if (item.key === 'inicio') {
+    if (item.key === 'inicio' || item.key === 'nosotros') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }

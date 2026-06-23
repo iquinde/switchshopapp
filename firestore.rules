@@ -104,13 +104,22 @@ service cloud.firestore {
     // Settings Validator
     function isValidSettings(data) {
       return hasRequiredFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroImage', 'footerText']) &&
-             hasOnlyAllowedFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroBadgeText', 'productSectionTitle', 'productSectionDescription', 'heroImage', 'logoImage', 'footerText', 'socialLinks', 'heroBgType', 'heroBgColor', 'heroTextColor', 'stockAlertPercentage', 'supportPhone', 'supportEmail', 'whatsappNumber']) &&
+             hasOnlyAllowedFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroBadgeText', 'productSectionTitle', 'productSectionDescription', 'aboutTitle', 'aboutImage', 'aboutSections', 'aboutIntroParagraphOne', 'aboutIntroParagraphTwo', 'aboutNameTitle', 'aboutNameParagraph', 'aboutDesignTitle', 'aboutDesignParagraph', 'heroImage', 'logoImage', 'footerText', 'socialLinks', 'heroBgType', 'heroBgColor', 'heroTextColor', 'stockAlertPercentage', 'supportPhone', 'supportEmail', 'whatsappNumber']) &&
              data.storeName is string && data.storeName.size() > 0 && data.storeName.size() <= 100 &&
              data.heroTitle is string && data.heroTitle.size() > 0 && data.heroTitle.size() <= 200 &&
              data.heroSubtitle is string && data.heroSubtitle.size() > 0 && data.heroSubtitle.size() <= 1000 &&
              (!('heroBadgeText' in data) || data.heroBadgeText == null || (data.heroBadgeText is string && data.heroBadgeText.size() <= 120)) &&
              (!('productSectionTitle' in data) || data.productSectionTitle == null || (data.productSectionTitle is string && data.productSectionTitle.size() > 0 && data.productSectionTitle.size() <= 120)) &&
              (!('productSectionDescription' in data) || data.productSectionDescription == null || (data.productSectionDescription is string && data.productSectionDescription.size() > 0 && data.productSectionDescription.size() <= 500)) &&
+             (!('aboutTitle' in data) || data.aboutTitle == null || (data.aboutTitle is string && data.aboutTitle.size() > 0 && data.aboutTitle.size() <= 120)) &&
+             (!('aboutImage' in data) || data.aboutImage == null || data.aboutImage == '' || (data.aboutImage is string && (data.aboutImage.matches("^https://.*") || data.aboutImage.matches("^http://.*") || data.aboutImage.matches("^data:image/.*")))) &&
+             (!('aboutSections' in data) || data.aboutSections == null || (data.aboutSections is list && data.aboutSections.size() >= 1 && data.aboutSections.size() <= 5)) &&
+             (!('aboutIntroParagraphOne' in data) || data.aboutIntroParagraphOne == null || (data.aboutIntroParagraphOne is string && data.aboutIntroParagraphOne.size() <= 1200)) &&
+             (!('aboutIntroParagraphTwo' in data) || data.aboutIntroParagraphTwo == null || (data.aboutIntroParagraphTwo is string && data.aboutIntroParagraphTwo.size() <= 1200)) &&
+             (!('aboutNameTitle' in data) || data.aboutNameTitle == null || (data.aboutNameTitle is string && data.aboutNameTitle.size() <= 120)) &&
+             (!('aboutNameParagraph' in data) || data.aboutNameParagraph == null || (data.aboutNameParagraph is string && data.aboutNameParagraph.size() <= 1200)) &&
+             (!('aboutDesignTitle' in data) || data.aboutDesignTitle == null || (data.aboutDesignTitle is string && data.aboutDesignTitle.size() <= 120)) &&
+             (!('aboutDesignParagraph' in data) || data.aboutDesignParagraph == null || (data.aboutDesignParagraph is string && data.aboutDesignParagraph.size() <= 1200)) &&
              data.heroImage is string && (data.heroImage.matches("^https://.*") || data.heroImage.matches("^http://.*") || data.heroImage.matches("^data:image/.*")) &&
              (!('logoImage' in data) || data.logoImage == null || data.logoImage == '' || (data.logoImage is string && (data.logoImage.matches("^https://.*") || data.logoImage.matches("^http://.*")))) &&
              data.footerText is string && data.footerText.size() > 0 && data.footerText.size() <= 500 &&

@@ -12,13 +12,16 @@ import UsersManager from './UsersManager';
 import ErrorLogsManager from './ErrorLogsManager';
 import LogisticsManager from './LogisticsManager';
 import SettingsManager from './SettingsManager';
+import SystemUpdatesManager from './SystemUpdatesManager';
 import { Product, Company } from '../types';
-import { CloudAlert, Building, Check, Copy } from 'lucide-react';
+import { Bell, CloudAlert, Building, Check, Copy, Sparkles } from 'lucide-react';
 import { getOfflineFallbackActive, setOfflineFallbackActive, OFFLINE_CHANGE_EVENT } from '../lib/offlineDb';
+import { latestSystemUpdate } from '../data/systemUpdates';
 
 const SELECTED_COMPANY_STORAGE_KEY = 'switchshop_selected_company_id';
 const ACTIVE_TAB_STORAGE_KEY = 'switchshop_merchant_active_tab';
-const COMMON_TABS = ['dashboard', 'inventory', 'purchases', 'orders', 'logistics', 'receivables', 'customers', 'settings'];
+const SEEN_SYSTEM_UPDATE_STORAGE_KEY = 'switchshop_seen_system_update_id';
+const COMMON_TABS = ['dashboard', 'inventory', 'purchases', 'orders', 'logistics', 'receivables', 'customers', 'updates', 'settings'];
 const SYSTEM_TABS = ['companies', 'system-company', 'system-users', 'system-error-logs'];
 const SUPER_ADMIN_TABS = [...COMMON_TABS, ...SYSTEM_TABS];
 
@@ -74,6 +77,16 @@ const MerchantView: React.FC<MerchantViewProps> = ({
     return initialList.length > 0 ? initialList[0].id : 'comp-default';
   });
   const [copiedLink, setCopiedLink] = React.useState(false);
+  const [seenSystemUpdateId, setSeenSystemUpdateId] = React.useState(() => {
+    return window.localStorage.getItem(SEEN_SYSTEM_UPDATE_STORAGE_KEY) || '';
+  });
+  const hasUnreadSystemUpdates = Boolean(latestSystemUpdate && seenSystemUpdateId !== latestSystemUpdate.id);
+
+  const markSystemUpdatesSeen = React.useCallback(() => {
+    if (!latestSystemUpdate) return;
+    window.localStorage.setItem(SEEN_SYSTEM_UPDATE_STORAGE_KEY, latestSystemUpdate.id);
+    setSeenSystemUpdateId(latestSystemUpdate.id);
+  }, []);
 
   // Sync selectedCompanyId when companies list loaded/updated asynchronously
   React.useEffect(() => {
@@ -167,12 +180,28 @@ const MerchantView: React.FC<MerchantViewProps> = ({
         <h1 className="text-base font-serif font-bold text-stone-900">
           Manager<span className="text-primary text-[#8b5a2b]">.</span>
         </h1>
-        <button
-          onClick={handleSwitchToCatalog}
-          className="text-[11px] font-bold text-stone-600 hover:text-stone-900 flex items-center gap-1.5 bg-stone-50 hover:bg-stone-100 border border-stone-200/60 px-3 py-1.5 rounded-xl transition-all"
-        >
-          <span>Ver Tienda</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('updates');
+              markSystemUpdatesSeen();
+            }}
+            className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-stone-200/60 bg-stone-50 text-stone-600 transition-all hover:bg-stone-100 hover:text-stone-900"
+            title="Ver novedades del sistema"
+          >
+            <Bell size={17} />
+            {hasUnreadSystemUpdates && (
+              <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-primary" />
+            )}
+          </button>
+          <button
+            onClick={handleSwitchToCatalog}
+            className="text-[11px] font-bold text-stone-600 hover:text-stone-900 flex items-center gap-1.5 bg-stone-50 hover:bg-stone-100 border border-stone-200/60 px-3 py-1.5 rounded-xl transition-all"
+          >
+            <span>Ver Tienda</span>
+          </button>
+        </div>
       </div>
 
       <Sidebar 
@@ -183,6 +212,7 @@ const MerchantView: React.FC<MerchantViewProps> = ({
         isCollapsed={isCollapsed}
         setIsCollapsed={setIsCollapsed}
         isSuperAdmin={isSuperAdmin}
+        hasUnreadUpdates={hasUnreadSystemUpdates}
       />
       
       <main className="flex-1 p-3 sm:p-5 md:p-8 lg:p-12">
@@ -256,6 +286,33 @@ const MerchantView: React.FC<MerchantViewProps> = ({
             </div>
           )}
 
+          {hasUnreadSystemUpdates && latestSystemUpdate && activeTab !== 'updates' && (
+            <div className="rounded-xl border border-primary/20 bg-white p-4 shadow-sm sm:rounded-2xl">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span className="flex items-start gap-3 text-sm text-stone-700">
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Sparkles size={18} />
+                  </span>
+                  <span>
+                    <strong className="block text-stone-950">Hay nuevas mejoras disponibles: {latestSystemUpdate.title}</strong>
+                    <span className="text-xs leading-5 text-stone-500">{latestSystemUpdate.summary}</span>
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('updates');
+                    markSystemUpdatesSeen();
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-xs font-bold text-white transition-all hover:bg-stone-800"
+                >
+                  <Bell size={14} />
+                  Ver novedades
+                </button>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'dashboard' && <MerchantDashboard onNavigate={setActiveTab} companyId={currentCompanyId} />}
           {activeTab === 'inventory' && <InventoryManager products={products} companyId={currentCompanyId} />}
           {activeTab === 'purchases' && <PurchasesManager products={products} companyId={currentCompanyId} />}
@@ -273,6 +330,12 @@ const MerchantView: React.FC<MerchantViewProps> = ({
           )}
           {activeTab === 'receivables' && <ReceivablesManager companyId={currentCompanyId} />}
           {activeTab === 'logistics' && <LogisticsManager companyId={currentCompanyId} />}
+          {activeTab === 'updates' && (
+            <SystemUpdatesManager
+              hasUnreadUpdates={hasUnreadSystemUpdates}
+              onMarkUpdatesSeen={markSystemUpdatesSeen}
+            />
+          )}
           {activeTab === 'customers' && (
             <CustomersManager 
               companyId={currentCompanyId} 
@@ -290,7 +353,13 @@ const MerchantView: React.FC<MerchantViewProps> = ({
         </div>
       </main>
 
-      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} isSuperAdmin={isSuperAdmin} />
+      <BottomNav
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onLogout={onLogout}
+        isSuperAdmin={isSuperAdmin}
+        hasUnreadUpdates={hasUnreadSystemUpdates}
+      />
     </div>
   );
 };

@@ -4,6 +4,7 @@ import Cart from './components/Cart';
 import ProductDetail from './components/ProductDetail';
 import MerchantView from './components/MerchantView';
 import CatalogView from './components/CatalogView';
+import AboutView from './components/AboutView';
 import ErrorBoundary from './components/ErrorBoundary';
 import ToastHost from './components/ToastHost';
 import { db, auth, googleProvider } from './firebase';
@@ -653,6 +654,7 @@ function StoreCustomerAuthModal({
 
 const STORE_ROUTE_PREFIX = 'tienda';
 const STORE_SECTION_SLUGS = new Set(['inicio', 'productos', 'nosotros', 'contacto']);
+type StoreSection = 'inicio' | 'productos' | 'nosotros' | 'contacto';
 type AuthEntryContext = 'private' | 'store';
 const AUTH_ENTRY_CONTEXT_KEY = 'switchshop.authEntryContext';
 
@@ -690,6 +692,16 @@ function isStorefrontRoute() {
   return hasStoreQuery || pathParts[0] === STORE_ROUTE_PREFIX || hashParts[0] === STORE_ROUTE_PREFIX;
 }
 
+function getStoreRouteSection(): StoreSection {
+  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  const hashParts = window.location.hash.replace('#', '').split('/').filter(Boolean);
+  const pathSection = pathParts[0] === STORE_ROUTE_PREFIX ? pathParts[2] : pathParts[0];
+  const hashSection = hashParts[0] === STORE_ROUTE_PREFIX ? hashParts[2] : hashParts[0];
+  const section = pathSection || hashSection;
+
+  return STORE_SECTION_SLUGS.has(section || '') ? (section as StoreSection) : 'inicio';
+}
+
 export default function App() {
   const [products, setProducts] = React.useState<Product[]>([]);
   const [cartItems, setCartItems] = React.useState<CartItem[]>([]);
@@ -697,6 +709,7 @@ export default function App() {
   const [isCartOpen, setIsCartOpen] = React.useState(false);
   const [isMerchantMode, setIsMerchantMode] = React.useState(false);
   const [isClientStoreRoute, setIsClientStoreRoute] = React.useState(isStorefrontRoute());
+  const [activeStoreSection, setActiveStoreSection] = React.useState<StoreSection>(getStoreRouteSection());
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
   const [activeCategory, setActiveCategory] = React.useState<string>('todos');
   const [searchTerm, setSearchTerm] = React.useState<string>('');
@@ -852,6 +865,7 @@ export default function App() {
   React.useEffect(() => {
     const handleUrlChange = () => {
       setIsClientStoreRoute(isStorefrontRoute());
+      setActiveStoreSection(getStoreRouteSection());
       if (companies.length > 0) {
         parseCompanyFromUrl(companies);
       }
@@ -877,6 +891,7 @@ export default function App() {
 
   const openMerchantManager = () => {
     setActiveCompany(null);
+    setActiveStoreSection('inicio');
     setIsClientStoreRoute(false);
     setIsMerchantMode(true);
     window.history.pushState({}, '', '/');
@@ -890,6 +905,7 @@ export default function App() {
 
     const storePath = `/tienda/${slugify(company.storeName)}`;
     setActiveCompany(company);
+    setActiveStoreSection('inicio');
     setIsClientStoreRoute(true);
     setIsMerchantMode(false);
     setSelectedProduct(null);
@@ -928,6 +944,24 @@ export default function App() {
     // Filter out products belonging to the template company or with missing companyId entirely in public directory/catalog views
     return products.filter(p => p.companyId && p.companyId !== 'comp-default');
   }, [products, activeCompany, isClientStoreRoute]);
+
+  const activeStoreBasePath = activeCompany ? `/tienda/${slugify(activeCompany.storeName)}` : undefined;
+
+  React.useEffect(() => {
+    if (activeStoreSection === 'nosotros') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    if (activeStoreSection === 'inicio') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      document.getElementById(activeStoreSection)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [activeStoreSection]);
 
   const isAdmin = isSuperAdminUser(user?.email, user?.emailVerified, userRole);
   const userCompany = user ? companies.find(c => canAccessCompany(c, user.email, user.emailVerified, userRole)) : null;
@@ -1502,7 +1536,7 @@ export default function App() {
           onLogout={logout}
           storeName={activeSettings.storeName}
           logoImage={activeSettings.logoImage}
-          storeBasePath={activeCompany ? `/tienda/${slugify(activeCompany.storeName)}` : undefined}
+          storeBasePath={activeStoreBasePath}
         />
         
         {/* Floating Controls */}
@@ -1534,21 +1568,29 @@ export default function App() {
           )}
         </div>
       
-        <CatalogView 
-          products={companyProducts}
-          activeCategory={activeCategory}
-          setActiveCategory={setActiveCategory}
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          mobileCols={mobileCols}
-          setMobileCols={setMobileCols}
-          onAddToCart={addToCart}
-          onProductClick={setSelectedProduct}
-          user={user}
-          settings={activeSettings}
-          companies={companies}
-          activeCompany={activeCompany}
-        />
+        {activeStoreSection === 'nosotros' ? (
+          <AboutView
+            settings={activeSettings}
+            activeCompany={activeCompany}
+            storeBasePath={activeStoreBasePath}
+          />
+        ) : (
+          <CatalogView 
+            products={companyProducts}
+            activeCategory={activeCategory}
+            setActiveCategory={setActiveCategory}
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+            mobileCols={mobileCols}
+            setMobileCols={setMobileCols}
+            onAddToCart={addToCart}
+            onProductClick={setSelectedProduct}
+            user={user}
+            settings={activeSettings}
+            companies={companies}
+            activeCompany={activeCompany}
+          />
+        )}
 
         <Cart 
           isOpen={isCartOpen} 

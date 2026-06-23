@@ -135,6 +135,18 @@ export interface StoreSettings {
   heroBadgeText?: string;
   productSectionTitle?: string;
   productSectionDescription?: string;
+  aboutTitle?: string;
+  aboutImage?: string;
+  aboutIntroParagraphOne?: string;
+  aboutIntroParagraphTwo?: string;
+  aboutNameTitle?: string;
+  aboutNameParagraph?: string;
+  aboutDesignTitle?: string;
+  aboutDesignParagraph?: string;
+  aboutSections?: Array<{
+    title: string;
+    paragraph: string;
+  }>;
   heroImage: string;
   logoImage?: string;
   footerText: string;

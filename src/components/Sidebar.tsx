@@ -16,7 +16,8 @@ import {
   Building2,
   FileWarning,
   ShieldCheck,
-  Truck
+  Truck,
+  Bell
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -28,6 +29,7 @@ interface SidebarProps {
   isCollapsed: boolean;
   setIsCollapsed: (collapsed: boolean) => void;
   isSuperAdmin?: boolean;
+  hasUnreadUpdates?: boolean;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -37,7 +39,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onSwitchToCatalog,
   isCollapsed,
   setIsCollapsed,
-  isSuperAdmin = false
+  isSuperAdmin = false,
+  hasUnreadUpdates = false
 }) => {
   const [isSystemMenuOpen, setIsSystemMenuOpen] = React.useState(false);
   const systemMenuItems = [
@@ -46,6 +49,13 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'system-error-logs', label: 'Log de Errores', icon: FileWarning },
   ];
   const isSystemActive = systemMenuItems.some(item => item.id === activeTab) || activeTab === 'companies';
+
+  React.useEffect(() => {
+    if (isSystemActive && !isCollapsed) {
+      setIsSystemMenuOpen(true);
+    }
+  }, [isSystemActive, isCollapsed]);
+
   const menuItems = [
     { id: 'dashboard', label: 'Inicio', icon: LayoutDashboard },
     { id: 'inventory', label: 'Inventario', icon: Package },
@@ -54,6 +64,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'logistics', label: 'Logistica', icon: Truck },
     { id: 'receivables', label: 'Cartera', icon: Receipt },
     { id: 'customers', label: 'Clientes', icon: Users },
+    { id: 'updates', label: 'Novedades', icon: Bell, badge: hasUnreadUpdates },
     { id: 'settings', label: 'Configuración', icon: Settings },
   ];
 
@@ -88,7 +99,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <button
             key={item.id}
             onClick={() => setActiveTab(item.id)}
-            className={`w-full flex items-center p-3 rounded-xl transition-all ${
+            className={`relative w-full flex items-center p-3 rounded-xl transition-all ${
               activeTab === item.id 
                 ? 'bg-primary/10 text-primary font-bold' 
                 : 'text-stone-500 hover:bg-stone-50'
@@ -99,10 +110,13 @@ const Sidebar: React.FC<SidebarProps> = ({
               <motion.span 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="ml-3 text-sm"
+                className="ml-3 flex-1 text-left text-sm"
               >
                 {item.label}
               </motion.span>
+            )}
+            {item.badge && (
+              <span className={isCollapsed ? 'absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-primary' : 'h-2.5 w-2.5 rounded-full bg-primary'} />
             )}
           </button>
         ))}

@@ -2,7 +2,7 @@ import React from 'react';
 import Hero from './Hero';
 import ProductCard from './ProductCard';
 import { Product, Company } from '../types';
-import { Search, X, Grid2X2, Grid3X3, Instagram, Facebook, Twitter, Mail, Phone, MapPin, Sparkles, Music2 } from 'lucide-react';
+import { Search, X, Grid2X2, Grid3X3, Instagram, Facebook, Twitter, Mail, Phone, MapPin, Music2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface CatalogViewProps {
@@ -20,6 +20,7 @@ interface CatalogViewProps {
   companies?: Company[];
   activeCompany?: Company | null;
 }
+
 
 const CatalogView: React.FC<CatalogViewProps> = ({
   products,
@@ -66,7 +67,7 @@ const CatalogView: React.FC<CatalogViewProps> = ({
   const displayStoreName = settings?.storeName || 'SwitchShop';
   const displayFooterText = settings?.footerText || 'Productos seleccionados con alma, sabor y tradición.';
   const displayProductTitle = settings?.productSectionTitle || 'Nuestros Productos';
-  const displayProductDescription = settings?.productSectionDescription || 'Cada producto es seleccionado o creado con dedicación, garantizando la calidez de lo tradicional y la máxima calidad.';
+  const displayProductDescription = settings?.productSectionDescription || 'Cada producto es seleccionado o creado con dedicacion, garantizando la calidez de lo tradicional y la maxima calidad.';
   const socialLinks = settings?.socialLinks || {};
   const socialItems = [
     { key: 'instagram', label: 'Instagram', icon: Instagram, config: socialLinks.instagram },
@@ -153,7 +154,7 @@ const CatalogView: React.FC<CatalogViewProps> = ({
       </section>
 
       <footer className="bg-stone-900 text-white">
-        <section id="nosotros" className="scroll-mt-24 pt-20 pb-14">
+        <section className="pt-20 pb-14">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-12 lg:gap-16 text-center">
             <motion.div className="flex flex-col items-center" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0 }}>

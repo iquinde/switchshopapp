@@ -15,6 +15,14 @@ service firebase.storage {
                    request.resource.contentType.matches('image/.*');
     }
 
+    match /about/{companyId}/{fileName} {
+      allow read: if true;
+      allow write: if hasVerifiedEmail() &&
+                   request.resource != null &&
+                   request.resource.size < 4 * 1024 * 1024 &&
+                   request.resource.contentType.matches('image/.*');
+    }
+
     match /productos/{productId}/{fileName} {
       allow read: if true;
       allow write: if hasVerifiedEmail() &&

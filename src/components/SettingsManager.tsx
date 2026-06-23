@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { db, getDownloadURL, ref, storage, uploadBytes } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { StoreSettings } from '../types';
-import { Save, Sparkles, RefreshCw, Layers, Check, Layout, AlertCircle, Palette, Image, CheckCircle2, Upload, X, ShoppingBag, Heart, Search, Grid2X2, ArrowRight, Mail, Phone, MapPin, Instagram, Facebook, Twitter, Music2, Pencil } from 'lucide-react';
+import { Save, Sparkles, RefreshCw, Layers, Check, Layout, AlertCircle, Palette, Image, CheckCircle2, Upload, X, ShoppingBag, Heart, Search, Grid2X2, ArrowRight, Mail, Phone, MapPin, Instagram, Facebook, Twitter, Music2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive } from '../lib/offlineDb';
 
 // Predefined professional color palettes for the catalog top background
@@ -41,6 +41,68 @@ const DEFAULT_SOCIAL_LINKS: NonNullable<StoreSettings['socialLinks']> = {
   twitter: { enabled: false, url: '' }
 };
 
+const MIN_ABOUT_SECTIONS = 1;
+const MAX_ABOUT_SECTIONS = 5;
+
+const DEFAULT_ABOUT_CONTENT = {
+  aboutTitle: 'Nuestra Historia',
+  aboutImage: 'https://images.unsplash.com/photo-1452860606245-08befc0ff44b?auto=format&fit=crop&q=80&w=1600',
+  aboutSections: [
+    {
+      title: 'Nuestra esencia',
+      paragraph: 'SwitchShop es la tienda de los verdaderos artesanos ecuatorianos, de los mas capaces y autenticos. Representa lo mejor que sabemos hacer en Ecuador desde hace muchas generaciones.'
+    },
+    {
+      title: 'Nuestro nombre',
+      paragraph: 'El nombre de nuestra marca nace de una palabra local que habla de identidad. Para nosotros esa identidad es una filosofia de vida y lo que defendemos: nuestra identidad.'
+    },
+    {
+      title: 'Disenos creativos y funcionales',
+      paragraph: 'Creamos productos propios combinando materiales naturales, texturas y colores de alta calidad, durabilidad y funcionalidad.'
+    }
+  ]
+};
+
+const normalizeAboutSections = (settings: Partial<StoreSettings>) => {
+  const fromSaved = settings.aboutSections
+    ?.map(section => ({
+      title: section.title || '',
+      paragraph: section.paragraph || ''
+    }))
+    .filter(section => section.title.trim() || section.paragraph.trim());
+
+  if (fromSaved?.length) {
+    return fromSaved.slice(0, MAX_ABOUT_SECTIONS);
+  }
+
+  const hasLegacyContent = Boolean(
+    settings.aboutIntroParagraphOne ||
+    settings.aboutIntroParagraphTwo ||
+    settings.aboutNameTitle ||
+    settings.aboutNameParagraph ||
+    settings.aboutDesignTitle ||
+    settings.aboutDesignParagraph
+  );
+
+  const fromLegacy = hasLegacyContent ? [
+    {
+      title: 'Nuestra esencia',
+      paragraph: [settings.aboutIntroParagraphOne, settings.aboutIntroParagraphTwo].filter(Boolean).join(' ')
+    },
+    {
+      title: settings.aboutNameTitle || 'Nuestro nombre',
+      paragraph: settings.aboutNameParagraph || ''
+    },
+    {
+      title: settings.aboutDesignTitle || 'Disenos creativos y funcionales',
+      paragraph: settings.aboutDesignParagraph || ''
+    }
+  ].filter(section => section.title.trim() || section.paragraph.trim()) : [];
+
+  const normalized = fromLegacy.length ? fromLegacy : DEFAULT_ABOUT_CONTENT.aboutSections;
+  return normalized.slice(0, MAX_ABOUT_SECTIONS);
+};
+
 const normalizeSocialLinks = (links?: StoreSettings['socialLinks']) => ({
   instagram: { ...DEFAULT_SOCIAL_LINKS.instagram, ...(links?.instagram || {}) },
   facebook: { ...DEFAULT_SOCIAL_LINKS.facebook, ...(links?.facebook || {}) },
@@ -58,6 +120,9 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
     heroBadgeText: 'Bienvenido a la tienda',
     productSectionTitle: 'Nuestros Productos',
     productSectionDescription: 'Cada producto es seleccionado o creado con dedicaci�n, garantizando la calidez de lo tradicional y la m�xima calidad.',
+    aboutTitle: DEFAULT_ABOUT_CONTENT.aboutTitle,
+    aboutImage: DEFAULT_ABOUT_CONTENT.aboutImage,
+    aboutSections: DEFAULT_ABOUT_CONTENT.aboutSections,
     heroImage: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=2000',
     logoImage: '',
     footerText: 'Productos seleccionados con alma, sabor y tradición.',
@@ -77,76 +142,46 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
   const [logoUploadError, setLogoUploadError] = React.useState('');
   const [pendingLogoFile, setPendingLogoFile] = React.useState<File | null>(null);
   const [pendingLogoPreview, setPendingLogoPreview] = React.useState('');
+  const [pendingAboutImageFile, setPendingAboutImageFile] = React.useState<File | null>(null);
+  const [pendingAboutImagePreview, setPendingAboutImagePreview] = React.useState('');
   const [isHeroBackgroundEditorOpen, setIsHeroBackgroundEditorOpen] = React.useState(false);
+
+  const withLoadedDefaults = (data: StoreSettings): StoreSettings => ({
+    ...data,
+    heroBgType: data.heroBgType || 'solid',
+    heroBgColor: data.heroBgColor || '#1c1917',
+    heroTextColor: data.heroTextColor || 'light',
+    stockAlertPercentage: data.stockAlertPercentage ?? 20,
+    supportPhone: data.supportPhone || '+593 99 999 9999',
+    supportEmail: data.supportEmail || 'soporte@switchshop.com',
+    whatsappNumber: data.whatsappNumber || '+593 99 999 9999',
+    logoImage: data.logoImage || '',
+    socialLinks: normalizeSocialLinks(data.socialLinks),
+    aboutTitle: data.aboutTitle || DEFAULT_ABOUT_CONTENT.aboutTitle,
+    aboutImage: data.aboutImage || DEFAULT_ABOUT_CONTENT.aboutImage,
+    aboutSections: normalizeAboutSections(data)
+  });
 
   // Load existing settings
   React.useEffect(() => {
     const fetchSettings = async () => {
       if (getOfflineFallbackActive()) {
-        const local = offlineDb.getSettings();
-        setSettings({
-          ...local,
-          heroBgType: local.heroBgType || 'solid',
-          heroBgColor: local.heroBgColor || '#1c1917',
-          heroTextColor: local.heroTextColor || 'light',
-          stockAlertPercentage: local.stockAlertPercentage ?? 20,
-          supportPhone: local.supportPhone || '+593 99 999 9999',
-          supportEmail: local.supportEmail || 'soporte@switchshop.com',
-          whatsappNumber: local.whatsappNumber || '+593 99 999 9999',
-          logoImage: local.logoImage || '',
-          socialLinks: normalizeSocialLinks(local.socialLinks)
-        });
+        setSettings(withLoadedDefaults(offlineDb.getSettings()));
         setIsLoading(false);
         return;
       }
+
       try {
         const docRef = doc(db, 'settings', settingsDocId);
         const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data() as StoreSettings;
-          setSettings({
-            ...data,
-            heroBgType: data.heroBgType || 'solid',
-            heroBgColor: data.heroBgColor || '#1c1917',
-            heroTextColor: data.heroTextColor || 'light',
-            stockAlertPercentage: data.stockAlertPercentage ?? 20,
-            supportPhone: data.supportPhone || '+593 99 999 9999',
-            supportEmail: data.supportEmail || 'soporte@switchshop.com',
-            whatsappNumber: data.whatsappNumber || '+593 99 999 9999',
-            logoImage: data.logoImage || '',
-            socialLinks: normalizeSocialLinks(data.socialLinks)
-          });
-        } else {
-          const local = offlineDb.getSettings();
-          setSettings({
-            ...local,
-            heroBgType: local.heroBgType || 'solid',
-            heroBgColor: local.heroBgColor || '#1c1917',
-            heroTextColor: local.heroTextColor || 'light',
-            stockAlertPercentage: local.stockAlertPercentage ?? 20,
-            supportPhone: local.supportPhone || '+593 99 999 9999',
-            supportEmail: local.supportEmail || 'soporte@switchshop.com',
-            whatsappNumber: local.whatsappNumber || '+593 99 999 9999',
-            logoImage: local.logoImage || '',
-            socialLinks: normalizeSocialLinks(local.socialLinks)
-          });
-        }
+        const nextSettings = docSnap.exists()
+          ? (docSnap.data() as StoreSettings)
+          : offlineDb.getSettings();
+        setSettings(withLoadedDefaults(nextSettings));
       } catch (err) {
-        console.warn("Error loading cloud settings, falling back to local: ", err);
+        console.warn('Error loading cloud settings, falling back to local: ', err);
         setOfflineFallbackActive(true);
-        const local = offlineDb.getSettings();
-        setSettings({
-          ...local,
-          heroBgType: local.heroBgType || 'solid',
-          heroBgColor: local.heroBgColor || '#1c1917',
-          heroTextColor: local.heroTextColor || 'light',
-          stockAlertPercentage: local.stockAlertPercentage ?? 20,
-          supportPhone: local.supportPhone || '+593 99 999 9999',
-          supportEmail: local.supportEmail || 'soporte@switchshop.com',
-          whatsappNumber: local.whatsappNumber || '+593 99 999 9999',
-          logoImage: local.logoImage || '',
-          socialLinks: normalizeSocialLinks(local.socialLinks)
-        });
+        setSettings(withLoadedDefaults(offlineDb.getSettings()));
       } finally {
         setIsLoading(false);
       }
@@ -158,11 +193,11 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
     if (presetType === 'coffee') {
       setSettings(prev => ({
         ...prev,
-        storeName: 'Granos & Café',
-        heroTitle: 'Aromas Únicos y Café de Especialidad Directo a tu Taza.',
-        heroSubtitle: 'Disfruta del auténtico sabor del café de altura cultivado con pasión, secado al sol y tostado artesanalmente para consentir tus sentidos.',
+        storeName: 'Granos & Cafe',
+        heroTitle: 'Aromas Unicos y Cafe de Especialidad Directo a tu Taza.',
+        heroSubtitle: 'Disfruta del autentico sabor del cafe de altura cultivado con pasion, secado al sol y tostado artesanalmente para consentir tus sentidos.',
         heroImage: 'https://images.unsplash.com/photo-1447933601403-0c6688de566e?auto=format&fit=crop&q=80&w=2000',
-        footerText: 'El sabor único de la pasión por el auténtico café artesano.',
+        footerText: 'El sabor unico de la pasion por el autentico cafe artesano.',
         heroBgType: 'solid',
         heroBgColor: '#2b1509',
         heroTextColor: 'light'
@@ -171,10 +206,10 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
       setSettings(prev => ({
         ...prev,
         storeName: 'Esencia Pulseras',
-        heroTitle: 'Energía y Belleza Hecha a Mano con Piedras Naturales.',
-        heroSubtitle: 'Diseños que cuentan historias. Creamos accesorios exclusivos y pulseras ajustables utilizando minerales auténticos, cuarzos y amatistas silvestres.',
+        heroTitle: 'Energia y Belleza Hecha a Mano con Piedras Naturales.',
+        heroSubtitle: 'Disenos que cuentan historias. Creamos accesorios exclusivos y pulseras ajustables utilizando minerales autenticos, cuarzos y amatistas silvestres.',
         heroImage: 'https://images.unsplash.com/photo-1611591437281-460bfbe1220a?auto=format&fit=crop&q=80&w=2000',
-        footerText: 'Accesorios creados para conectar con tu energía interior y elegancia.',
+        footerText: 'Accesorios creados para conectar con tu energia interior y elegancia.',
         heroBgType: 'solid',
         heroBgColor: '#23153c',
         heroTextColor: 'light'
@@ -183,10 +218,10 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
       setSettings(prev => ({
         ...prev,
         storeName: 'SwitchShop',
-        heroTitle: 'Calidad y Tradición Hecha a Mano.',
-        heroSubtitle: 'Descubre nuestra cuidada selección de café premium de especialidad y piezas de joyería artesanal única. Cultivados y creados con dedicación para deleitar tus sentidos.',
+        heroTitle: 'Calidad y Tradicion Hecha a Mano.',
+        heroSubtitle: 'Descubre nuestra cuidada seleccion de cafe premium de especialidad y piezas de joyeria artesanal unica. Cultivados y creados con dedicacion para deleitar tus sentidos.',
         heroImage: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=2000',
-        footerText: 'Productos seleccionados con alma, sabor y tradición.',
+        footerText: 'Productos seleccionados con alma, sabor y tradicion.',
         heroBgType: 'solid',
         heroBgColor: '#1c1917',
         heroTextColor: 'light'
@@ -221,11 +256,22 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
 
   const uploadLogoFile = async (file: File) => {
     if (!storage) {
-      throw new Error('Firebase Storage no está configurado. Revisa el storageBucket del proyecto.');
+      throw new Error('Firebase Storage no esta configurado. Revisa el storageBucket del proyecto.');
     }
 
     const extension = getFileExtension(file);
     const storageRef = ref(storage, `logos/${settingsDocId}/logo-${Date.now()}.${extension}`);
+    const snapshot = await uploadBytes(storageRef, file, { contentType: file.type });
+    return getDownloadURL(snapshot.ref);
+  };
+
+  const uploadAboutImageFile = async (file: File) => {
+    if (!storage) {
+      throw new Error('Firebase Storage no esta configurado. Revisa el storageBucket del proyecto.');
+    }
+
+    const extension = getFileExtension(file);
+    const storageRef = ref(storage, `about/${settingsDocId}/about-${Date.now()}.${extension}`);
     const snapshot = await uploadBytes(storageRef, file, { contentType: file.type });
     return getDownloadURL(snapshot.ref);
   };
@@ -243,7 +289,7 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
     }
 
     if (file.size > 2 * 1024 * 1024) {
-      setLogoUploadError('El logo supera 2MB. Usa una versión más liviana para que la tienda cargue rápido.');
+      setLogoUploadError('El logo supera 2MB. Usa una version mas liviana para que la tienda cargue rapido.');
       return;
     }
 
@@ -286,21 +332,53 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
     reader.readAsDataURL(file);
   };
 
+  const handleAboutImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) return;
+
+    const supportedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!supportedTypes.includes(file.type)) {
+      setLogoUploadError('Formato no soportado para la imagen de historia. Usa JPG, PNG, WEBP o GIF.');
+      return;
+    }
+
+    if (file.size > 4 * 1024 * 1024) {
+      setLogoUploadError('La imagen de historia supera 4MB. Usa una version mas liviana para que la tienda cargue rapido.');
+      return;
+    }
+
+    setLogoUploadError('');
+    setPendingAboutImageFile(file);
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        setPendingAboutImagePreview(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     setSaveSuccess(false);
 
     if (getOfflineFallbackActive()) {
-      if (pendingLogoFile && pendingLogoPreview) {
-        const localSettings = { ...settings, logoImage: pendingLogoPreview };
-        offlineDb.saveSettings(localSettings);
-        setSettings(localSettings);
-      } else {
-        offlineDb.saveSettings(settings);
-      }
+      const localSettings = {
+        ...settings,
+        ...(pendingLogoFile && pendingLogoPreview ? { logoImage: pendingLogoPreview } : {}),
+        ...(pendingAboutImageFile && pendingAboutImagePreview ? { aboutImage: pendingAboutImagePreview } : {})
+      };
+      offlineDb.saveSettings(localSettings);
+      setSettings(localSettings);
       setPendingLogoFile(null);
       setPendingLogoPreview('');
+      setPendingAboutImageFile(null);
+      setPendingAboutImagePreview('');
       setSaveSuccess(true);
       setIsSaving(false);
       setTimeout(() => setSaveSuccess(false), 4000);
@@ -308,19 +386,23 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
     }
 
     try {
-      const nextSettings = pendingLogoFile
-        ? { ...settings, logoImage: await uploadLogoFile(pendingLogoFile) }
-        : settings;
+      const nextSettings = {
+        ...settings,
+        ...(pendingLogoFile ? { logoImage: await uploadLogoFile(pendingLogoFile) } : {}),
+        ...(pendingAboutImageFile ? { aboutImage: await uploadAboutImageFile(pendingAboutImageFile) } : {})
+      };
       await persistSettings(nextSettings);
       setSettings(nextSettings);
       setPendingLogoFile(null);
       setPendingLogoPreview('');
+      setPendingAboutImageFile(null);
+      setPendingAboutImagePreview('');
       setLogoUploadError('');
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 4500);
     } catch (err) {
-      console.warn("Error saving setting to cloud: ", err);
-      setLogoUploadError('No se pudo guardar la configuración. Revisa permisos de Firebase Storage y reglas de Firestore para settings.');
+      console.warn('Error saving setting to cloud: ', err);
+      setLogoUploadError('No se pudo guardar la configuracion. Revisa permisos de Firebase Storage y reglas de Firestore para settings.');
     } finally {
       setIsSaving(false);
     }
@@ -345,6 +427,39 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
     });
   };
 
+  const updateAboutSection = (index: number, patch: { title?: string; paragraph?: string }) => {
+    setSettings(prev => {
+      const aboutSections = normalizeAboutSections(prev).map((section, sectionIndex) => (
+        sectionIndex === index ? { ...section, ...patch } : section
+      ));
+      return { ...prev, aboutSections };
+    });
+  };
+
+  const addAboutSection = () => {
+    setSettings(prev => {
+      const aboutSections = normalizeAboutSections(prev);
+      if (aboutSections.length >= MAX_ABOUT_SECTIONS) return prev;
+      return {
+        ...prev,
+        aboutSections: [
+          ...aboutSections,
+          { title: `Nuevo titulo ${aboutSections.length + 1}`, paragraph: 'Escribe aqui el contenido de esta parte de tu historia.' }
+        ]
+      };
+    });
+  };
+
+  const removeAboutSection = (index: number) => {
+    setSettings(prev => {
+      const aboutSections = normalizeAboutSections(prev);
+      if (aboutSections.length <= MIN_ABOUT_SECTIONS) return prev;
+      return {
+        ...prev,
+        aboutSections: aboutSections.filter((_, sectionIndex) => sectionIndex !== index)
+      };
+    });
+  };
   if (isLoading) {
     return (
       <div className="flex h-96 items-center justify-center">
@@ -363,7 +478,10 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
     logoImage: logoPreview,
     heroBadgeText: settings.heroBadgeText || 'Bienvenido a la tienda',
     productSectionTitle: settings.productSectionTitle || 'Nuestros Productos',
-    productSectionDescription: settings.productSectionDescription || 'Cada producto es seleccionado o creado con dedicaci�n, garantizando la calidez de lo tradicional y la m�xima calidad.'
+    productSectionDescription: settings.productSectionDescription || 'Cada producto es seleccionado o creado con dedicacion, garantizando la calidez de lo tradicional y la maxima calidad.',
+    aboutTitle: settings.aboutTitle || DEFAULT_ABOUT_CONTENT.aboutTitle,
+    aboutImage: pendingAboutImagePreview || settings.aboutImage || DEFAULT_ABOUT_CONTENT.aboutImage,
+    aboutSections: normalizeAboutSections(settings)
   };
   const socialLinks = normalizeSocialLinks(settings.socialLinks);
   const previewSocialItems = [
@@ -649,7 +767,7 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
                 </button>
               </div>
             </div>
-            <p className="text-xs text-stone-400">La vista previa replica la tienda publica: encabezado, banner, productos, pie de pagina, contacto y redes.</p>
+            <p className="text-xs text-stone-400">La vista previa replica la tienda publica: encabezado, banner, nuestra historia, productos, pie de pagina, contacto y redes.</p>
 
             <div className="border border-stone-200 rounded-2xl overflow-hidden shadow-sm bg-stone-50">
               <div className="bg-stone-100 px-4 py-1.5 flex justify-between items-center text-[9px] font-semibold text-stone-400 select-none">
@@ -749,7 +867,8 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
                               onChange={e => setSettings({ ...settings, heroImage: e.target.value })}
                               className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary/20"
                             />
-                            <div className="flex flex-wrap gap-2">
+                
+            <div className="flex flex-wrap gap-2">
                               <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-stone-900 px-3 py-2 text-xs font-bold text-white hover:bg-stone-850">
                                 <Upload size={13} />
                                 <span>Subir imagen</span>
@@ -1033,6 +1152,100 @@ export default function SettingsManager({ companyId }: SettingsManagerProps) {
                     <p className="text-stone-600">Desarrollado con alma artesanal y tecnologia de vanguardia.</p>
                   </div>
                 </footer>
+              </div>
+            </div>
+
+            <div className="border border-stone-200 rounded-2xl overflow-hidden shadow-sm bg-stone-50">
+              <div className="bg-stone-100 px-4 py-1.5 flex justify-between items-center text-[9px] font-semibold text-stone-400 select-none">
+                <span className="truncate">{previewSettings.storeName || 'SwitchShop'}.com/nosotros</span>
+                <span>Vista pagina</span>
+              </div>
+              <div className="max-h-[620px] overflow-y-auto bg-white">
+                <section className="py-14 px-4 sm:px-8 bg-white border-b border-stone-100">
+                  <div className="max-w-4xl mx-auto text-center">
+                    <label className="relative block aspect-[16/7] w-full overflow-hidden rounded-2xl bg-stone-100 border border-stone-200 cursor-pointer group mb-9" title="Cambiar imagen de Nuestra Historia">
+                      {previewSettings.aboutImage ? (
+                        <img src={previewSettings.aboutImage} alt="Nuestra Historia" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center text-stone-300"><Image size={34} /></div>
+                      )}
+                      <span className="absolute right-3 top-3 inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 text-[10px] font-bold text-stone-900 shadow-sm">
+                        <Upload size={12} />
+                        <span>Imagen</span>
+                      </span>
+                      <span className="absolute inset-0 bg-stone-950/50 text-white text-xs font-bold uppercase tracking-widest hidden group-hover:flex items-center justify-center">Cambiar imagen</span>
+                      <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" disabled={isSaving} onChange={handleAboutImageUpload} />
+                    </label>
+
+                    <div className="relative max-w-2xl mx-auto mb-8">
+                      <input
+                        type="text"
+                        aria-label="Titulo de Nuestra Historia"
+                        value={previewSettings.aboutTitle}
+                        onChange={e => setSettings({ ...settings, aboutTitle: e.target.value })}
+                        className="w-full bg-transparent pr-9 border-b border-dashed border-stone-200 focus:border-primary outline-none text-center text-3xl sm:text-4xl font-serif font-bold text-stone-950"
+                      />
+                      <span className="absolute right-0 top-2 h-7 w-7 rounded-full bg-stone-900 text-white flex items-center justify-center shadow-sm"><Pencil size={13} /></span>
+                    </div>
+
+                    <div className="mb-7 flex flex-col items-center justify-between gap-3 sm:flex-row">
+                      <p className="text-xs font-bold uppercase tracking-widest text-stone-400">
+                        Bloques de historia {previewSettings.aboutSections.length}/{MAX_ABOUT_SECTIONS}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={addAboutSection}
+                        disabled={previewSettings.aboutSections.length >= MAX_ABOUT_SECTIONS}
+                        className="inline-flex items-center gap-2 rounded-full bg-stone-900 px-4 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Plus size={13} />
+                        <span>Agregar bloque</span>
+                      </button>
+                    </div>
+
+                    <div className="mt-9 space-y-8">
+                      {previewSettings.aboutSections.map((section, index) => (
+                        <div key={index} className="rounded-2xl border border-stone-100 bg-stone-50/60 p-4 sm:p-5">
+                          <div className="mb-4 flex items-center justify-between gap-3">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Bloque {index + 1}</span>
+                            {previewSettings.aboutSections.length > MIN_ABOUT_SECTIONS && (
+                              <button
+                                type="button"
+                                onClick={() => removeAboutSection(index)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-red-100 bg-white text-red-500 transition-colors hover:bg-red-50"
+                                aria-label="Quitar bloque"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                          <div className="space-y-4">
+                            <div className="relative max-w-xl mx-auto">
+                              <input
+                                type="text"
+                                aria-label={`Titulo del bloque ${index + 1}`}
+                                value={section.title}
+                                onChange={e => updateAboutSection(index, { title: e.target.value })}
+                                className="w-full bg-transparent pr-9 border-b border-dashed border-stone-200 focus:border-primary outline-none text-center text-xl sm:text-2xl font-bold text-stone-950"
+                              />
+                              <span className="absolute right-0 top-0 h-7 w-7 rounded-full bg-stone-900 text-white flex items-center justify-center shadow-sm"><Pencil size={13} /></span>
+                            </div>
+                            <div className="relative max-w-3xl mx-auto">
+                              <textarea
+                                rows={3}
+                                aria-label={`Parrafo del bloque ${index + 1}`}
+                                value={section.paragraph}
+                                onChange={e => updateAboutSection(index, { paragraph: e.target.value })}
+                                className="w-full bg-transparent pr-9 border-b border-dashed border-stone-200 focus:border-primary outline-none resize-none text-base sm:text-lg leading-8 text-stone-400 text-center"
+                              />
+                              <span className="absolute right-0 top-1 h-7 w-7 rounded-full bg-stone-900 text-white flex items-center justify-center shadow-sm"><Pencil size={13} /></span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </section>
               </div>
             </div>
 
