@@ -8,6 +8,7 @@ interface HeroProps {
   settings?: {
     heroTitle: string;
     heroSubtitle: string;
+    heroBadgeText?: string;
     heroImage: string;
     heroBgType?: 'image' | 'solid' | 'gradient';
     heroBgColor?: string;
@@ -22,6 +23,7 @@ export default function Hero({ user, activeCompany, settings }: HeroProps) {
   const heroImage = settings?.heroImage?.trim() || "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=2000";
   const heroTitle = settings?.heroTitle?.trim() || "Calidad y Tradición Hecha a Mano.";
   const heroSubtitle = settings?.heroSubtitle?.trim() || "Descubre nuestra cuidada selección de café premium de especialidad y piezas de joyería artesanal única. Cultivados y creados con dedicación para deleitar tus sentidos.";
+  const heroBadgeText = settings?.heroBadgeText?.trim() || (greetingName ? `¡Hola, ${firstName}! Nos alegra tenerte aquí` : '');
   
   // Default to image if unspecified so that existing user backgrounds are not lost.
   const bgType = settings?.heroBgType || 'image';
@@ -54,7 +56,7 @@ export default function Hero({ user, activeCompany, settings }: HeroProps) {
           transition={{ duration: 0.8 }}
           className="max-w-2xl"
         >
-          {greetingName && (
+          {heroBadgeText && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -66,9 +68,7 @@ export default function Hero({ user, activeCompany, settings }: HeroProps) {
               }`}
             >
               <Sparkles size={14} className="text-accent animate-pulse" />
-              <span className="text-xs sm:text-sm font-medium tracking-wide">
-                ¡Hola, {greetingName}! Nos alegra tenerte aquí
-              </span>
+              <span className="text-xs sm:text-sm font-medium tracking-wide">{heroBadgeText}</span>
             </motion.div>
           )}
           

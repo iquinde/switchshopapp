@@ -1,0 +1,31 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function hasVerifiedEmail() {
+      return request.auth != null &&
+             request.auth.token.email is string &&
+             request.auth.token.email_verified == true;
+    }
+
+    match /logos/{companyId}/{fileName} {
+      allow read: if true;
+      allow write: if hasVerifiedEmail() &&
+                   request.resource != null &&
+                   request.resource.size < 2 * 1024 * 1024 &&
+                   request.resource.contentType.matches('image/.*');
+    }
+
+    match /productos/{productId}/{fileName} {
+      allow read: if true;
+      allow write: if hasVerifiedEmail() &&
+                   request.resource != null &&
+                   request.resource.size < 5 * 1024 * 1024 &&
+                   request.resource.contentType.matches('image/.*');
+    }
+
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

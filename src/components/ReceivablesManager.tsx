@@ -60,9 +60,18 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
   // Listen to collections
   React.useEffect(() => {
     if (isOfflineMode) return;
+    const customersQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+      ? query(collection(db, 'customers'), where('companyId', '==', companyId))
+      : query(collection(db, 'customers'));
+    const ordersQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+      ? query(collection(db, 'orders'), where('companyId', '==', companyId))
+      : query(collection(db, 'orders'));
+    const transactionsQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+      ? query(collection(db, 'paymentTransactions'), where('companyId', '==', companyId))
+      : query(collection(db, 'paymentTransactions'));
 
     // Customers list
-    const unsubPay = onSnapshot(collection(db, 'customers'), (snapshot) => {
+    const unsubPay = onSnapshot(customersQuery, (snapshot) => {
       const customersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -74,7 +83,7 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
     });
 
     // Orders list
-    const unsubOrd = onSnapshot(collection(db, 'orders'), (snapshot) => {
+    const unsubOrd = onSnapshot(ordersQuery, (snapshot) => {
       const ordersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -86,8 +95,7 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
     });
 
     // Payment Transactions list
-    const qTrans = query(collection(db, 'paymentTransactions'));
-    const unsubTrans = onSnapshot(qTrans, (snapshot) => {
+    const unsubTrans = onSnapshot(transactionsQuery, (snapshot) => {
       const transData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -110,7 +118,7 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
       unsubOrd();
       unsubTrans();
     };
-  }, [isOfflineMode]);
+  }, [companyId, isOfflineMode]);
 
   // Filter by company
   const companyCustomers = customers.filter(c => {
@@ -345,7 +353,8 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
         referenceNumber: payRef || '',
         bankName: payBank || '',
         date: serverTimestamp(),
-        notes: payNotes || 'Abono general a cuenta corriente'
+        notes: payNotes || 'Abono general a cuenta corriente',
+        companyId: companyId === 'all' ? customerData.companyId : companyId
       };
       
       batch.set(transactionRef, transactionData);

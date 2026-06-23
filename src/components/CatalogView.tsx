@@ -2,7 +2,7 @@ import React from 'react';
 import Hero from './Hero';
 import ProductCard from './ProductCard';
 import { Product, Company } from '../types';
-import { Search, X, Grid2X2, Grid3X3, Instagram, Facebook, Twitter, Mail, Phone, MapPin, Sparkles } from 'lucide-react';
+import { Search, X, Grid2X2, Grid3X3, Instagram, Facebook, Twitter, Mail, Phone, MapPin, Sparkles, Music2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface CatalogViewProps {
@@ -65,6 +65,15 @@ const CatalogView: React.FC<CatalogViewProps> = ({
 
   const displayStoreName = settings?.storeName || 'SwitchShop';
   const displayFooterText = settings?.footerText || 'Productos seleccionados con alma, sabor y tradición.';
+  const displayProductTitle = settings?.productSectionTitle || 'Nuestros Productos';
+  const displayProductDescription = settings?.productSectionDescription || 'Cada producto es seleccionado o creado con dedicación, garantizando la calidez de lo tradicional y la máxima calidad.';
+  const socialLinks = settings?.socialLinks || {};
+  const socialItems = [
+    { key: 'instagram', label: 'Instagram', icon: Instagram, config: socialLinks.instagram },
+    { key: 'facebook', label: 'Facebook', icon: Facebook, config: socialLinks.facebook },
+    { key: 'tiktok', label: 'TikTok', icon: Music2, config: socialLinks.tiktok },
+    { key: 'twitter', label: 'X / Twitter', icon: Twitter, config: socialLinks.twitter }
+  ].filter(item => item.config?.enabled && item.config?.url?.trim());
 
   return (
     <main>
@@ -73,10 +82,8 @@ const CatalogView: React.FC<CatalogViewProps> = ({
       <section id="productos" className="scroll-mt-24 py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
 
-          <h2 className="text-4xl md:text-5xl font-serif font-bold text-stone-900 mb-4">Nuestros Productos</h2>
-          <p className="text-stone-500 max-w-2xl mx-auto">
-            Cada producto es seleccionado o creado con dedicación, garantizando la calidez de lo tradicional y la máxima calidad.
-          </p>
+          <h2 className="text-4xl md:text-5xl font-serif font-bold text-stone-900 mb-4">{displayProductTitle}</h2>
+          <p className="text-stone-500 max-w-2xl mx-auto">{displayProductDescription}</p>
 
 
         </div>
@@ -145,140 +152,118 @@ const CatalogView: React.FC<CatalogViewProps> = ({
         )}
       </section>
 
-      {/* Features & Footer */}
-      <section id="nosotros" className="scroll-mt-24 bg-stone-900 py-24 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 text-center">
-            {/* Item 1 */}
-            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0 }}>
-              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-6"><Sparkles className="text-accent" size={32} /></div>
-              <h3 className="text-xl font-serif font-bold mb-2">Origen de Origen</h3>
-              <p className="text-stone-400">Seleccionado directo de productores.</p>
+      <footer className="bg-stone-900 text-white">
+        <section id="nosotros" className="scroll-mt-24 pt-20 pb-14">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-12 lg:gap-16 text-center">
+            <motion.div className="flex flex-col items-center" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0 }}>
+              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                {settings?.logoImage && (
+                  <div className="h-12 w-12 rounded-lg bg-white border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                    <img
+                      src={settings.logoImage}
+                      alt={`${displayStoreName} logo`}
+                      className="h-full w-full object-contain p-1"
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="space-y-5 flex flex-col items-center">
+              <div className="flex items-center justify-center gap-3">
+                <h2 className="text-2xl font-serif font-bold text-white">
+                  {displayStoreName}<span className="text-primary">.</span>
+                </h2>
+              </div>
+              <p className="max-w-sm mx-auto text-sm leading-relaxed text-stone-400">{displayFooterText}</p>
+              {socialItems.length > 0 && (
+                <div className="flex items-center justify-center gap-2 text-stone-400">
+                  {socialItems.map(item => {
+                    const Icon = item.icon;
+                    const href = item.config.url.trim();
+                    return (
+                      <a
+                        key={item.key}
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={item.label}
+                        className="h-9 w-9 rounded-full border border-white/10 bg-white/5 flex items-center justify-center hover:border-primary hover:text-primary hover:bg-white/10 transition-colors"
+                      >
+                        <Icon size={17} />
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             </motion.div>
 
-            {/* Item 2 */}
-            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 }}>
-              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-6"><MapPin className="text-accent" size={32} /></div>
+            <motion.div className="flex flex-col items-center" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 }}>
+              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <MapPin className="text-accent" size={32} />
+              </div>
               <h3 className="text-xl font-serif font-bold mb-2">Envío Nacional</h3>
-              <p className="text-stone-400">Llegamos a todo el país.</p>
-            </motion.div>
-
-            {/* Item 3 */}
-            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.4 }}>
-              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-6"><Phone className="text-accent" size={32} /></div>
-              <h3 className="text-xl font-serif font-bold mb-3">Soporte y Contacto</h3>
-              <div className="space-y-1.5 flex flex-col items-center justify-center text-sm">
-                {settings?.supportPhone ? (
-                  <a href={`tel:${settings.supportPhone}`} className="hover:text-primary transition-colors hover:underline text-stone-200">
-                    <span className="text-[10px] text-stone-500 font-bold uppercase mr-1 font-mono">TEL:</span>{settings.supportPhone}
-                  </a>
-                ) : (
-                  <span className="text-stone-400">Dudas sobre tu pedido.</span>
-                )}
-                {settings?.supportEmail && (
-                  <a href={`mailto:${settings.supportEmail}`} className="hover:text-primary transition-colors hover:underline text-stone-300 text-xs">
-                    <span className="text-[10px] text-stone-500 font-bold uppercase mr-1 font-mono">CORREO:</span>{settings.supportEmail}
-                  </a>
-                )}
-                {settings?.whatsappNumber && (
-                  <a 
-                    href={`https://wa.me/${settings.whatsappNumber.replace(/[^0-9]/g, '')}`} 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="mt-1 flex items-center gap-1.5 text-xs font-bold text-emerald-400 hover:text-emerald-350 transition-colors hover:underline"
-                  >
-                    <span>💬 WhatsApp Activo</span>
-                  </a>
-                )}
+              <div className="space-y-4 text-sm max-w-sm mx-auto">
+                <div className="flex flex-col items-center gap-2">
+                  <MapPin size={16} className="text-stone-500 shrink-0" />
+                  <div className="text-center">
+                    <span className="text-[10px] text-stone-500 font-bold uppercase tracking-widest leading-none block mb-1">Envíos</span>
+                    <p className="text-stone-300 leading-relaxed">Cobertura nacional y despachos en menos de 24 horas laborables.</p>
+                  </div>
+                </div>
+                <div className="text-center">
+                  <span className="text-[10px] text-stone-500 font-bold uppercase tracking-widest leading-none block mb-1">Horarios</span>
+                  <p className="text-stone-300 font-medium">Lunes a Sábado: 08:30 AM - 07:00 PM</p>
+                </div>
               </div>
             </motion.div>
-          </div>
-        </div>
-      </section>
 
-      <footer id="contacto" className="scroll-mt-24 bg-white border-t border-stone-100 pt-20 pb-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-stone-400 text-sm">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16 text-left">
-            <div className="space-y-4">
-              <h2 className="text-2xl font-serif font-bold text-stone-900">{displayStoreName}<span className="text-primary">.</span></h2>
-              <p className="text-stone-500 text-xs sm:text-sm leading-relaxed">{displayFooterText}</p>
-              <div className="flex items-center gap-3 text-stone-400 pt-2">
-                <a href="#" className="hover:text-primary transition-colors hover:scale-105 transform duration-200"><Instagram size={18} /></a>
-                <a href="#" className="hover:text-primary transition-colors hover:scale-105 transform duration-200"><Facebook size={18} /></a>
-                <a href="#" className="hover:text-primary transition-colors hover:scale-105 transform duration-200"><Twitter size={18} /></a>
+            <motion.div className="flex flex-col items-center" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.4 }}>
+              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Phone className="text-accent" size={32} />
               </div>
-            </div>
-
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-950 mb-6 font-serif">Secciones</h3>
-              <ul className="space-y-3 text-xs sm:text-sm text-stone-500">
-                <li><button onClick={() => { setActiveCategory('Todos'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="hover:text-primary hover:underline transition-colors">Todos los Productos</button></li>
-                <li><button onClick={() => { setActiveCategory('café'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="hover:text-primary hover:underline transition-colors">Café de Especialidad</button></li>
-                <li><button onClick={() => { setActiveCategory('joyas'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="hover:text-primary hover:underline transition-colors">Pulseras & Accesorios</button></li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-950 mb-6 font-serif">Soporte y Contacto</h3>
-              <ul className="space-y-4 text-xs sm:text-sm text-stone-500">
+              <h3 className="text-xl font-serif font-bold mb-2">Soporte directo</h3>
+              <ul className="space-y-4 text-sm max-w-sm mx-auto">
                 {settings?.supportPhone && (
-                  <li className="flex items-start gap-2.5">
-                    <Phone size={15} className="text-stone-400 mt-0.5" />
-                    <div className="flex flex-col">
-                      <span className="text-[10px] text-stone-400 font-bold uppercase tracking-widest leading-none mb-0.5">Llámanos</span>
-                      <a href={`tel:${settings.supportPhone}`} className="hover:text-primary transition-colors font-medium text-stone-850">{settings.supportPhone}</a>
+                  <li className="flex flex-col items-center gap-2">
+                    <Phone size={16} className="text-stone-500 shrink-0" />
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] text-stone-500 font-bold uppercase tracking-widest leading-none mb-1">Llámanos</span>
+                      <a href={`tel:${settings.supportPhone}`} className="hover:text-primary transition-colors font-medium text-stone-200">{settings.supportPhone}</a>
                     </div>
                   </li>
                 )}
                 {settings?.supportEmail && (
-                  <li className="flex items-start gap-2.5">
-                    <Mail size={15} className="text-stone-400 mt-0.5" />
-                    <div className="flex flex-col">
-                      <span className="text-[10px] text-stone-400 font-bold uppercase tracking-widest leading-none mb-0.5">Escríbenos</span>
-                      <a href={`mailto:${settings.supportEmail}`} className="hover:text-primary transition-colors font-medium text-stone-850 break-all">{settings.supportEmail}</a>
+                  <li className="flex flex-col items-center gap-2">
+                    <Mail size={16} className="text-stone-500 shrink-0" />
+                    <div className="flex flex-col items-center min-w-0">
+                      <span className="text-[10px] text-stone-500 font-bold uppercase tracking-widest leading-none mb-1">Escríbenos</span>
+                      <a href={`mailto:${settings.supportEmail}`} className="hover:text-primary transition-colors font-medium text-stone-200 break-all text-center">{settings.supportEmail}</a>
                     </div>
                   </li>
                 )}
                 {settings?.whatsappNumber && (
-                  <li className="flex flex-col gap-2 pt-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-emerald-500 text-xs">●</span>
-                      <span className="text-[10px] text-stone-400 font-bold uppercase tracking-widest leading-none">WhatsApp Activo</span>
-                    </div>
-                    <a 
-                      href={`https://wa.me/${settings.whatsappNumber.replace(/[^0-9]/g, '')}`} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="hover:bg-emerald-600 bg-emerald-500 text-white transition-all text-xs font-bold py-2 px-3 rounded-lg inline-flex items-center gap-1.5 shadow-sm w-max hover:scale-[1.02] duration-200"
+                  <li className="pt-1">
+                    <a
+                      href={`https://wa.me/${settings.whatsappNumber.replace(/[^0-9]/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white transition-colors text-xs font-bold py-2.5 px-3 rounded-lg shadow-sm"
                     >
-                      <span className="text-sm font-bold">💬</span>
-                      <span>Chatear por WhatsApp</span>
+                      <span>WhatsApp Activo</span>
                     </a>
                   </li>
                 )}
               </ul>
-            </div>
-
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-950 mb-6 font-serif">Atención y Envíos</h3>
-              <div className="space-y-4 text-xs sm:text-sm text-stone-500">
-                <div className="flex items-start gap-2.5">
-                  <MapPin size={15} className="text-stone-400 mt-0.5" />
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-stone-400 font-bold uppercase tracking-widest leading-none mb-1">Envíos</span>
-                    <span className="text-stone-700">Cobertura Nacional y despachos en menos de 24 horas laborables.</span>
-                  </div>
-                </div>
-                <div>
-                  <span className="text-[10px] text-stone-400 font-bold uppercase tracking-widest leading-none block mb-1">Horarios</span>
-                  <span className="text-stone-700 font-medium">Lunes a Sábado: 08:30 AM - 07:00 PM</span>
-                </div>
-              </div>
-            </div>
+            </motion.div>
           </div>
-          <div className="border-t border-stone-100 pt-8 flex flex-col sm:flex-row justify-between items-center gap-4 text-stone-400 text-xs text-center sm:text-left">
+          </div>
+        </section>
+
+        <div id="contacto" className="scroll-mt-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-7 pb-8 border-t border-white/10 text-stone-300">
+          <div className="flex flex-col sm:flex-row justify-center sm:justify-between items-center gap-3 text-stone-500 text-xs text-center">
             <p>© 2026 {displayStoreName}. Todos los derechos reservados.</p>
-            <p className="text-[11px] text-stone-300">Desarrollado con alma artesanal y tecnología de vanguardia.</p>
+            <p className="text-[11px] text-stone-600">Desarrollado con alma artesanal y tecnología de vanguardia.</p>
           </div>
         </div>
       </footer>

@@ -159,11 +159,15 @@ export default function OrdersManager({
     applyShippingLocation(selectedCustomerData.logisticsLocationId, applyShippingCost);
   }, [applyShippingCost, applyShippingLocation, manualSubtotal, orderPaymentMethod, selectedCustomer, selectedCustomerData]);
 
-  const getPaymentStatusFromAmount = (amountPaid: number, total: number): 'unpaid' | 'partially_paid' | 'paid' => {
-    if (amountPaid >= total - 0.01) return 'paid';
-    if (amountPaid <= 0) return 'unpaid';
-    return 'partially_paid';
-  };
+const getPaymentStatusFromAmount = (amountPaid: number, total: number): 'unpaid' | 'partially_paid' | 'paid' => {
+  if (amountPaid >= total - 0.01) return 'paid';
+  if (amountPaid <= 0) return 'unpaid';
+  return 'partially_paid';
+};
+
+const omitUndefined = <T extends Record<string, any>>(value: T): T => {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
+};
 
   const openEditPaymentMethod = () => {
     if (!selectedOrder) return;
@@ -214,8 +218,10 @@ export default function OrdersManager({
   // Listen to orders
   React.useEffect(() => {
     if (isOfflineMode) return;
-    const q = query(collection(db, 'orders'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const ordersQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+      ? query(collection(db, 'orders'), where('companyId', '==', companyId))
+      : query(collection(db, 'orders'));
+    const unsubscribe = onSnapshot(ordersQuery, (snapshot) => {
       const ordersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -233,12 +239,15 @@ export default function OrdersManager({
       setOfflineFallbackActive(true);
     });
     return () => unsubscribe();
-  }, [isOfflineMode]);
+  }, [companyId, isOfflineMode]);
 
   // Listen to customers
   React.useEffect(() => {
     if (isOfflineMode) return;
-    const unsubscribe = onSnapshot(collection(db, 'customers'), (snapshot) => {
+    const customersQuery = companyId && companyId !== 'all' && companyId !== 'comp-default'
+      ? query(collection(db, 'customers'), where('companyId', '==', companyId))
+      : query(collection(db, 'customers'));
+    const unsubscribe = onSnapshot(customersQuery, (snapshot) => {
       const customersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -249,7 +258,7 @@ export default function OrdersManager({
       setOfflineFallbackActive(true);
     });
     return () => unsubscribe();
-  }, [isOfflineMode]);
+  }, [companyId, isOfflineMode]);
 
   // Filter orders by active company context first
   const companyOrders = orders.filter(matchesActiveCompany);
@@ -444,6 +453,114 @@ export default function OrdersManager({
         alert('Pedido cancelado exitosamente (Modo Local Activo)');
       } catch (fErr) {
         alert('Error al cancelar pedido');
+      }
+    }
+  };
+
+  const handleDeleteOrder = async (order: Order) => {
+    const shouldRestore = order.status !== 'cancelled';
+    const confirmMessage = shouldRestore
+      ? '¿Seguro que deseas eliminar permanentemente este pedido? Se restablecerá el stock y se ajustará la cartera si aplica.'
+      : '¿Seguro que deseas eliminar permanentemente este pedido del historial de ventas?';
+
+    if (!confirm(confirmMessage)) return;
+
+    const removeLocalOrder = () => {
+      offlineDb.deleteOrder(order.id);
+      setOrders(prev => prev.filter(existing => existing.id !== order.id));
+      setSelectedOrder(null);
+    };
+
+    if (getOfflineFallbackActive()) {
+      try {
+        if (shouldRestore) {
+          const localProducts = offlineDb.getProducts();
+          order.items.forEach(item => {
+            const prod = localProducts.find(p => p.id === item.id);
+            if (prod) {
+              offlineDb.saveProduct({ ...prod, stock: prod.stock + item.quantity });
+            }
+          });
+
+          if (order.customerId && order.paymentMethod === 'credit') {
+            const debtToReturn = order.total - order.amountPaid;
+            if (debtToReturn > 0) {
+              const cust = offlineDb.getCustomers().find(c => c.id === order.customerId);
+              if (cust) {
+                offlineDb.saveCustomer({ ...cust, currentDebt: Math.max(0, (cust.currentDebt || 0) - debtToReturn) });
+              }
+            }
+          }
+        }
+
+        removeLocalOrder();
+        alert('Pedido eliminado permanentemente (Modo Local)');
+      } catch (err) {
+        alert('Error al eliminar pedido localmente');
+      }
+      return;
+    }
+
+    try {
+      const batch = writeBatch(db);
+
+      if (shouldRestore) {
+        for (const item of order.items) {
+          const productRef = doc(db, 'products', item.id);
+          const productSnap = await getDoc(productRef);
+          if (productSnap.exists()) {
+            const currentStock = productSnap.data().stock || 0;
+            batch.update(productRef, { stock: currentStock + item.quantity });
+          }
+        }
+
+        if (order.customerId && order.paymentMethod === 'credit') {
+          const debtToReturn = order.total - order.amountPaid;
+          if (debtToReturn > 0) {
+            const customerRef = doc(db, 'customers', order.customerId);
+            const customerSnap = await getDoc(customerRef);
+            if (customerSnap.exists()) {
+              const currentDebt = customerSnap.data().currentDebt || 0;
+              batch.update(customerRef, { currentDebt: Math.max(0, currentDebt - debtToReturn) });
+            }
+          }
+        }
+      }
+
+      batch.delete(doc(db, 'orders', order.id));
+      await batch.commit();
+
+      setOrders(prev => prev.filter(existing => existing.id !== order.id));
+      setSelectedOrder(null);
+      alert('Pedido eliminado permanentemente');
+    } catch (error) {
+      console.warn("Delete order failed in cloud, executing locally:", error);
+      setOfflineFallbackActive(true);
+      try {
+        if (shouldRestore) {
+          const localProducts = offlineDb.getProducts();
+          order.items.forEach(item => {
+            const prod = localProducts.find(p => p.id === item.id);
+            if (prod) {
+              offlineDb.saveProduct({ ...prod, stock: prod.stock + item.quantity });
+            }
+          });
+
+          if (order.customerId && order.paymentMethod === 'credit') {
+            const debtToReturn = order.total - order.amountPaid;
+            if (debtToReturn > 0) {
+              const cust = offlineDb.getCustomers().find(c => c.id === order.customerId);
+              if (cust) {
+                offlineDb.saveCustomer({ ...cust, currentDebt: Math.max(0, (cust.currentDebt || 0) - debtToReturn) });
+              }
+            }
+          }
+        }
+
+        removeLocalOrder();
+        alert('Pedido eliminado permanentemente (Modo Local Activo)');
+      } catch (fErr) {
+        alert('Error al eliminar pedido');
       }
     }
   };
@@ -949,9 +1066,9 @@ export default function OrdersManager({
 
       // New Order Doc
       const orderRef = doc(collection(db, 'orders'));
-      const orderData: Order = {
+      const orderData = omitUndefined({
         id: orderRef.id,
-        items: orderItems.map(item => ({
+        items: orderItems.map(item => omitUndefined({
           ...item.product,
           quantity: item.quantity
         })),
@@ -972,7 +1089,7 @@ export default function OrdersManager({
         customerPhone: finalCustomerPhone || undefined,
         companyId: targetCompanyId,
         createdAt: orderCreatedAt
-      };
+      }) as Order;
 
       batch.set(orderRef, orderData);
 
@@ -986,19 +1103,19 @@ export default function OrdersManager({
       // If some initial payment was made, generate payment transaction
       if (paidAmount > 0) {
         const transRef = doc(collection(db, 'paymentTransactions'));
-        const transData: PaymentTransaction = {
-          id: transRef.id,
-          orderId: orderRef.id,
-          orderNumber: orderRef.id.slice(-6).toUpperCase(),
-          customerId: finalCustomerId || 'manual-client',
+          const transData = omitUndefined({
+            id: transRef.id,
+            orderId: orderRef.id,
+            orderNumber: orderRef.id.slice(-6).toUpperCase(),
+            customerId: finalCustomerId || 'manual-client',
           customerName: finalCustomerName,
           amount: paidAmount,
           paymentMethod: orderPaymentMethod === 'credit' ? 'cash' : (orderPaymentMethod as any),
           date: serverTimestamp(),
-          notes: 'Pago inicial del pedido',
-          companyId: targetCompanyId,
-        };
-        batch.set(transRef, transData);
+            notes: 'Pago inicial del pedido',
+            companyId: targetCompanyId,
+          }) as PaymentTransaction;
+          batch.set(transRef, transData);
       }
 
       await batch.commit();
@@ -1534,12 +1651,20 @@ export default function OrdersManager({
                 {selectedOrder.status !== 'cancelled' && (
                   <button
                     onClick={() => handleCancelOrder(selectedOrder)}
-                    className="p-3 border border-red-100 rounded-xl hover:bg-red-50 text-red-500 transition-all flex items-center justify-center gap-1"
-                    title="Anular Pedido"
+                    className="p-3 border border-amber-100 rounded-xl hover:bg-amber-50 text-amber-600 transition-all flex items-center justify-center gap-1"
+                    title="Cancelar pedido"
                   >
-                    <Trash2 size={16} />
+                    <X size={16} />
                   </button>
                 )}
+
+                <button
+                  onClick={() => handleDeleteOrder(selectedOrder)}
+                  className="p-3 border border-red-100 rounded-xl hover:bg-red-50 text-red-500 transition-all flex items-center justify-center gap-1"
+                  title="Eliminar pedido"
+                >
+                  <Trash2 size={16} />
+                </button>
 
                 {selectedOrder.status !== 'completed' && selectedOrder.paymentStatus === 'paid' && selectedOrder.dispatchStatus === 'delivered' && !(isCustomerPending || customerNotFound) && (
                   <button 

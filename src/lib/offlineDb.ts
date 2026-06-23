@@ -101,8 +101,18 @@ const DEFAULT_SETTINGS: StoreSettings = {
   storeName: "SwitchShop",
   heroTitle: "Calidad y Tradici贸n Hecha a Mano.",
   heroSubtitle: "Descubre nuestra cuidada selecci贸n de caf茅 premium de especialidad y piezas de joyer铆a artesanal 煤nica. Cultivados y creados con dedicaci贸n para deleitar tus sentidos.",
+  heroBadgeText: "Bienvenido a la tienda",
+  productSectionTitle: "Nuestros Productos",
+  productSectionDescription: "Cada producto es seleccionado o creado con dedicaci髇, garantizando la calidez de lo tradicional y la m醲ima calidad.",
   heroImage: "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=2000",
+  logoImage: "",
   footerText: "Productos seleccionados con alma, sabor y tradici贸n.",
+  socialLinks: {
+    instagram: { enabled: false, url: "" },
+    facebook: { enabled: false, url: "" },
+    tiktok: { enabled: false, url: "" },
+    twitter: { enabled: false, url: "" }
+  },
   heroBgType: "image",
   heroBgColor: "#1c1917",
   heroTextColor: "light",

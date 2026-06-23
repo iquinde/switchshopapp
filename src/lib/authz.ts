@@ -6,6 +6,8 @@ export type AppRole = 'super_admin' | 'company_admin' | 'company_staff';
 
 export interface UserRoleRecord {
   email: string;
+  firstName?: string;
+  lastName?: string;
   role: AppRole;
   companyId?: string | null;
   status: 'active' | 'inactive';
@@ -47,9 +49,5 @@ export function canAccessCompany(
     role.companyId === company.id &&
     (role.role === 'company_admin' || role.role === 'company_staff');
 
-  return (
-    normalizeEmail(company.ownerEmail) === normalizedEmail ||
-    (company.collaboratorEmails || []).some(collaborator => normalizeEmail(collaborator) === normalizedEmail) ||
-    hasCompanyRole
-  );
+  return hasCompanyRole;
 }

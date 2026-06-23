@@ -52,14 +52,27 @@ service cloud.firestore {
              companyId is string &&
              exists(/databases/$(database)/documents/companies/$(companyId)) &&
              get(/databases/$(database)/documents/companies/$(companyId)).data.status == 'active' &&
-             (
-               get(/databases/$(database)/documents/companies/$(companyId)).data.ownerEmail == request.auth.token.email ||
-               (
-                 'collaboratorEmails' in get(/databases/$(database)/documents/companies/$(companyId)).data &&
-                 request.auth.token.email in get(/databases/$(database)/documents/companies/$(companyId)).data.collaboratorEmails
-               ) ||
-               hasActiveCompanyRole(companyId)
-             );
+             hasActiveCompanyRole(companyId);
+    }
+
+    function isActiveCompany(companyId) {
+      return companyId is string &&
+             exists(/databases/$(database)/documents/companies/$(companyId)) &&
+             get(/databases/$(database)/documents/companies/$(companyId)).data.status == 'active';
+    }
+
+    function isOwnCustomerRecord(data) {
+      return isAuthenticated() &&
+             data.authUid is string &&
+             data.authUid == request.auth.uid;
+    }
+
+    function isOwnOrderCustomer(data) {
+      return isAuthenticated() &&
+             data.customerId is string &&
+             exists(/databases/$(database)/documents/customers/$(data.customerId)) &&
+             get(/databases/$(database)/documents/customers/$(data.customerId)).data.authUid == request.auth.uid &&
+             get(/databases/$(database)/documents/customers/$(data.customerId)).data.companyId == data.companyId;
     }
 
     function hasRequiredFields(data, fields) {
@@ -82,7 +95,7 @@ service cloud.firestore {
              (!('minStock' in data) || data.minStock == null || (data.minStock is number && data.minStock >= 0)) &&
              (!('status' in data) || data.status == null || (data.status in ['active', 'inactive'])) &&
              (!('sku' in data) || data.sku == null || (data.sku is string && data.sku.size() <= 50)) &&
-             data.image is string && (data.image.matches("^https://.*") || data.image.matches("^http://.*") || data.image.matches("^data:image/.*")) &&
+             data.image is string && (data.image == '' || data.image.matches("^https://.*") || data.image.matches("^http://.*") || data.image.matches("^data:image/.*")) &&
              (!('images' in data) || data.images == null || (data.images is list && data.images.size() <= 10)) &&
              data.category is string && data.category.size() > 0 && data.category.size() <= 100 &&
              (!('companyId' in data) || data.companyId == null || (data.companyId is string && data.companyId.size() <= 100));
@@ -91,12 +104,17 @@ service cloud.firestore {
     // Settings Validator
     function isValidSettings(data) {
       return hasRequiredFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroImage', 'footerText']) &&
-             hasOnlyAllowedFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroImage', 'footerText', 'heroBgType', 'heroBgColor', 'heroTextColor', 'stockAlertPercentage', 'supportPhone', 'supportEmail', 'whatsappNumber']) &&
+             hasOnlyAllowedFields(data, ['storeName', 'heroTitle', 'heroSubtitle', 'heroBadgeText', 'productSectionTitle', 'productSectionDescription', 'heroImage', 'logoImage', 'footerText', 'socialLinks', 'heroBgType', 'heroBgColor', 'heroTextColor', 'stockAlertPercentage', 'supportPhone', 'supportEmail', 'whatsappNumber']) &&
              data.storeName is string && data.storeName.size() > 0 && data.storeName.size() <= 100 &&
              data.heroTitle is string && data.heroTitle.size() > 0 && data.heroTitle.size() <= 200 &&
              data.heroSubtitle is string && data.heroSubtitle.size() > 0 && data.heroSubtitle.size() <= 1000 &&
-             data.heroImage is string && (data.heroImage.matches("^https://.*") || data.heroImage.matches("^http://.*")) &&
-             data.footerText is string && data.footerText.size() > 0 && data.footerText.size() <= 200 &&
+             (!('heroBadgeText' in data) || data.heroBadgeText == null || (data.heroBadgeText is string && data.heroBadgeText.size() <= 120)) &&
+             (!('productSectionTitle' in data) || data.productSectionTitle == null || (data.productSectionTitle is string && data.productSectionTitle.size() > 0 && data.productSectionTitle.size() <= 120)) &&
+             (!('productSectionDescription' in data) || data.productSectionDescription == null || (data.productSectionDescription is string && data.productSectionDescription.size() > 0 && data.productSectionDescription.size() <= 500)) &&
+             data.heroImage is string && (data.heroImage.matches("^https://.*") || data.heroImage.matches("^http://.*") || data.heroImage.matches("^data:image/.*")) &&
+             (!('logoImage' in data) || data.logoImage == null || data.logoImage == '' || (data.logoImage is string && (data.logoImage.matches("^https://.*") || data.logoImage.matches("^http://.*")))) &&
+             data.footerText is string && data.footerText.size() > 0 && data.footerText.size() <= 500 &&
+             (!('socialLinks' in data) || data.socialLinks == null || data.socialLinks is map) &&
              (!('heroBgType' in data) || data.heroBgType == null || (data.heroBgType is string)) &&
              (!('heroBgColor' in data) || data.heroBgColor == null || (data.heroBgColor is string)) &&
              (!('heroTextColor' in data) || data.heroTextColor == null || (data.heroTextColor is string)) &&
@@ -109,8 +127,9 @@ service cloud.firestore {
     // Customer Validator
     function isValidCustomer(data) {
       return hasRequiredFields(data, ['name']) &&
-             hasOnlyAllowedFields(data, ['id', 'name', 'phone', 'address', 'logisticsLocationId', 'city', 'province', 'totalSpent', 'currentDebt', 'createdAt', 'lastPurchase', 'email', 'creditLimit', 'companyId', 'status', 'cedula']) &&
+             hasOnlyAllowedFields(data, ['id', 'authUid', 'name', 'phone', 'address', 'logisticsLocationId', 'city', 'province', 'totalSpent', 'currentDebt', 'createdAt', 'lastPurchase', 'email', 'creditLimit', 'companyId', 'status', 'cedula']) &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (!('authUid' in data) || data.authUid == null || (data.authUid is string && data.authUid.size() <= 128)) &&
              (!('phone' in data) || data.phone == null || (data.phone is string && data.phone.size() <= 30)) &&
              (!('address' in data) || data.address == null || (data.address is string && data.address.size() <= 200)) &&
              (!('logisticsLocationId' in data) || data.logisticsLocationId == null || (data.logisticsLocationId is string && data.logisticsLocationId.size() <= 100)) &&
@@ -152,10 +171,10 @@ service cloud.firestore {
              (!('tax' in data) || data.tax == null || (data.tax is number));
     }
 
-    function isValidOrderPaymentEdit() {
+    function isValidOrderWorkflowEdit() {
       return isValidOrder(request.resource.data) &&
              resource.data.companyId == request.resource.data.companyId &&
-             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentMethod', 'paymentStatus', 'amountPaid']);
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'dispatchStatus', 'paymentMethod', 'paymentStatus', 'amountPaid']);
     }
 
     // Payment Transaction Validator
@@ -186,10 +205,10 @@ service cloud.firestore {
 
     // Company Validator
     function isValidCompany(data) {
-      return hasRequiredFields(data, ['name', 'ownerEmail', 'storeName', 'status', 'createdAt']) &&
+      return hasRequiredFields(data, ['name', 'storeName', 'status', 'createdAt']) &&
              hasOnlyAllowedFields(data, ['id', 'name', 'ownerEmail', 'collaboratorEmails', 'storeName', 'status', 'description', 'phone', 'whatsapp', 'email', 'createdAt']) &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
-             data.ownerEmail is string && data.ownerEmail.size() > 0 && data.ownerEmail.size() <= 100 &&
+             (!('ownerEmail' in data) || data.ownerEmail == null || (data.ownerEmail is string && data.ownerEmail.size() <= 100)) &&
              (!('collaboratorEmails' in data) || data.collaboratorEmails == null || (data.collaboratorEmails is list && data.collaboratorEmails.size() <= 20)) &&
              data.storeName is string && data.storeName.size() > 0 && data.storeName.size() <= 100 &&
              data.status is string && data.status in ['active', 'inactive'] &&
@@ -203,16 +222,35 @@ service cloud.firestore {
     // User Role Validator
     function isValidUserRole(data) {
       return hasRequiredFields(data, ['email', 'role', 'status', 'createdAt']) &&
-             hasOnlyAllowedFields(data, ['email', 'role', 'companyId', 'status', 'createdAt', 'updatedAt']) &&
+             hasOnlyAllowedFields(data, ['email', 'firstName', 'lastName', 'role', 'companyId', 'status', 'createdAt', 'updatedAt']) &&
              data.email is string && data.email.size() > 0 && data.email.size() <= 100 &&
+             (!('firstName' in data) || data.firstName == null || (data.firstName is string && data.firstName.size() > 0 && data.firstName.size() <= 100)) &&
+             (!('lastName' in data) || data.lastName == null || (data.lastName is string && data.lastName.size() > 0 && data.lastName.size() <= 100)) &&
              data.role is string && data.role in ['super_admin', 'company_admin', 'company_staff'] &&
              data.status is string && data.status in ['active', 'inactive'] &&
              data.createdAt is string &&
              (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string) &&
              (
                (data.role == 'super_admin' && (!('companyId' in data) || data.companyId == null || data.companyId is string)) ||
-               (data.role in ['company_admin', 'company_staff'] && data.companyId is string && data.companyId.size() > 0 && data.companyId.size() <= 100)
+               (
+                 data.role in ['company_admin', 'company_staff'] &&
+                 (
+                   (data.status == 'active' && data.companyId is string && data.companyId.size() > 0 && data.companyId.size() <= 100) ||
+                   (data.status == 'inactive' && (!('companyId' in data) || data.companyId == null || (data.companyId is string && data.companyId.size() <= 100)))
+                 )
+               )
              );
+    }
+
+    function isSelfPendingUserRoleCreate(roleEmail) {
+      return isAuthenticated() &&
+             request.auth.token.email is string &&
+             request.auth.token.email == roleEmail &&
+             request.resource.data.email == roleEmail &&
+             request.resource.data.role == 'company_staff' &&
+             request.resource.data.status == 'inactive' &&
+             (!('companyId' in request.resource.data) || request.resource.data.companyId == null) &&
+             isValidUserRole(request.resource.data);
     }
 
     // Client Error Log Validator
@@ -267,21 +305,60 @@ service cloud.firestore {
     }
 
     match /customers/{customerId} {
-      allow read, list, create, update: if true;
-      allow delete: if isAdmin();
+      allow read: if isAdmin() || isCompanyMember(resource.data.companyId) || isOwnCustomerRecord(resource.data);
+      allow create: if isValidCustomer(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      isCompanyMember(request.resource.data.companyId) ||
+                      (
+                        isOwnCustomerRecord(request.resource.data) &&
+                        isActiveCompany(request.resource.data.companyId) &&
+                        request.resource.data.status == 'pending'
+                      )
+                    );
+      allow update: if isValidCustomer(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      isCompanyMember(resource.data.companyId) ||
+                      isCompanyMember(request.resource.data.companyId) ||
+                      (
+                        isOwnCustomerRecord(resource.data) &&
+                        isOwnCustomerRecord(request.resource.data) &&
+                        request.resource.data.companyId == resource.data.companyId &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                          'name',
+                          'phone',
+                          'address',
+                          'logisticsLocationId',
+                          'city',
+                          'province',
+                          'email',
+                          'cedula',
+                          'lastPurchase'
+                        ])
+                      )
+                    );
+      allow delete: if isAdmin() || isCompanyMember(resource.data.companyId);
     }
 
     match /orders/{orderId} {
-      allow get: if true;
-      allow list: if isAdmin();
-      allow create: if isValidOrder(request.resource.data);
+      allow read: if isAdmin() || isCompanyMember(resource.data.companyId);
+      allow create: if isValidOrder(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      isCompanyMember(request.resource.data.companyId) ||
+                      (
+                        isActiveCompany(request.resource.data.companyId) &&
+                        isOwnOrderCustomer(request.resource.data)
+                      )
+                    );
       allow update: if isAdmin() ||
                       (
                         isCompanyMember(resource.data.companyId) &&
-                        isValidOrderPaymentEdit()
+                        isValidOrderWorkflowEdit()
                       ) ||
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['items', 'stock']));
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isCompanyMember(resource.data.companyId);
     }
 
     match /paymentTransactions/{transactionId} {
@@ -326,9 +403,14 @@ service cloud.firestore {
                      request.auth.token.email == roleEmail
                    );
       allow list: if isAdmin();
-      allow create, update: if isAdmin() &&
-                              request.resource.data.email == roleEmail &&
-                              isValidUserRole(request.resource.data);
+      allow create: if (
+                      isAdmin() &&
+                      request.resource.data.email == roleEmail &&
+                      isValidUserRole(request.resource.data)
+                    ) || isSelfPendingUserRoleCreate(roleEmail);
+      allow update: if isAdmin() &&
+                      request.resource.data.email == roleEmail &&
+                      isValidUserRole(request.resource.data);
       allow delete: if isAdmin();
     }
 

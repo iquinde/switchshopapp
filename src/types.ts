@@ -21,6 +21,7 @@ export interface CartItem extends Product {
 
 export interface Customer {
   id: string;
+  authUid?: string;
   name: string;
   email?: string;
   phone?: string;
@@ -131,8 +132,18 @@ export interface StoreSettings {
   storeName: string;
   heroTitle: string;
   heroSubtitle: string;
+  heroBadgeText?: string;
+  productSectionTitle?: string;
+  productSectionDescription?: string;
   heroImage: string;
+  logoImage?: string;
   footerText: string;
+  socialLinks?: {
+    instagram?: { enabled?: boolean; url?: string };
+    facebook?: { enabled?: boolean; url?: string };
+    tiktok?: { enabled?: boolean; url?: string };
+    twitter?: { enabled?: boolean; url?: string };
+  };
   heroBgType?: 'image' | 'solid' | 'gradient';
   heroBgColor?: string;
   heroTextColor?: 'light' | 'dark';
@@ -144,9 +155,9 @@ export interface StoreSettings {
 
 export interface Company {
   id: string;
-  name: string;          // Name of the business owner
-  ownerEmail: string;    // Owner's login/Google email
-  collaboratorEmails?: string[]; // Additional Google accounts allowed to manage the company
+  name: string;          // Business contact/responsible person
+  ownerEmail?: string;   // Legacy login email. New access is managed from userRoles.
+  collaboratorEmails?: string[]; // Legacy allowed accounts. New access is managed from userRoles.
   storeName: string;     // Exclusive name of their store/brand
   status: 'active' | 'inactive';
   description?: string;
