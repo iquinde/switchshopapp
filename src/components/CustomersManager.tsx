@@ -11,6 +11,7 @@ import {
 import { Customer } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive, OFFLINE_CHANGE_EVENT } from '../lib/offlineDb';
+import { findLogisticsLocation, logisticsLocations } from '../data/ciudades';
 
 interface CustomersManagerProps {
   companyId?: string; // Active companyId ('comp-default', 'comp-1', 'comp-2', etc.)
@@ -51,6 +52,9 @@ export default function CustomersManager({
       setPhone(prefillCustomer.phone);
       setCedula('');
       setAddress(prefillCustomer.address || '');
+      setLogisticsLocationId('');
+      setCitySearch('');
+      setIsCityPickerOpen(false);
       setCreditLimit('500');
       setIsEditing(true);
       if (onClearPrefill) {
@@ -67,6 +71,9 @@ export default function CustomersManager({
   const [phone, setPhone] = React.useState('');
   const [cedula, setCedula] = React.useState('');
   const [address, setAddress] = React.useState('');
+  const [logisticsLocationId, setLogisticsLocationId] = React.useState('');
+  const [citySearch, setCitySearch] = React.useState('');
+  const [isCityPickerOpen, setIsCityPickerOpen] = React.useState(false);
   const [creditLimit, setCreditLimit] = React.useState('500');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
@@ -103,6 +110,13 @@ export default function CustomersManager({
     return () => window.removeEventListener(OFFLINE_CHANGE_EVENT, handleSync);
   }, []);
 
+  const filteredCityOptions = React.useMemo(() => {
+    const term = citySearch.trim().toLowerCase();
+    return logisticsLocations
+      .filter(location => !term || location.label.toLowerCase().includes(term))
+      .slice(0, 40);
+  }, [citySearch]);
+
   const handleOpenAdd = () => {
     setCurrentCustomer(null);
     setName('');
@@ -110,6 +124,9 @@ export default function CustomersManager({
     setPhone('');
     setCedula('');
     setAddress('');
+    setLogisticsLocationId('');
+    setCitySearch('');
+    setIsCityPickerOpen(false);
     setCreditLimit('500');
     setIsEditing(true);
   };
@@ -121,6 +138,10 @@ export default function CustomersManager({
     setPhone(customer.phone || '');
     setCedula(customer.cedula || '');
     setAddress(customer.address || '');
+    setLogisticsLocationId(customer.logisticsLocationId || '');
+    const selectedLocation = customer.logisticsLocationId ? findLogisticsLocation(customer.logisticsLocationId) : null;
+    setCitySearch(selectedLocation?.label || (customer.province && customer.city ? `${customer.province} / ${customer.city}` : customer.city || ''));
+    setIsCityPickerOpen(false);
     setCreditLimit(customer.creditLimit?.toString() || '0');
     setIsEditing(true);
   };
@@ -131,6 +152,16 @@ export default function CustomersManager({
 
     setIsSubmitting(true);
     const parsedCreditLimit = parseFloat(creditLimit) || 0;
+    const normalizedCitySearch = citySearch.trim().toLowerCase();
+    const selectedLocation = findLogisticsLocation(logisticsLocationId) || logisticsLocations.find(location =>
+      location.label.toLowerCase() === normalizedCitySearch ||
+      location.canton.toLowerCase() === normalizedCitySearch
+    );
+    const locationPayload = {
+      logisticsLocationId: selectedLocation?.id || undefined,
+      city: selectedLocation?.canton || undefined,
+      province: selectedLocation?.province || undefined,
+    };
 
     if (getOfflineFallbackActive()) {
       try {
@@ -142,6 +173,7 @@ export default function CustomersManager({
             phone: phone.trim() || undefined,
             cedula: cedula.trim() || undefined,
             address: address.trim() || undefined,
+            ...locationPayload,
             creditLimit: parsedCreditLimit
           };
           if (currentCustomer.status === 'pending') {
@@ -156,6 +188,7 @@ export default function CustomersManager({
             phone: phone.trim() || undefined,
             cedula: cedula.trim() || undefined,
             address: address.trim() || undefined,
+            ...locationPayload,
             creditLimit: parsedCreditLimit,
             currentDebt: 0,
             totalSpent: 0,
@@ -182,6 +215,9 @@ export default function CustomersManager({
           phone: phone.trim() || null,
           cedula: cedula.trim() || null,
           address: address.trim() || null,
+          logisticsLocationId: selectedLocation?.id || null,
+          city: selectedLocation?.canton || null,
+          province: selectedLocation?.province || null,
           creditLimit: parsedCreditLimit
         };
         if (currentCustomer.status === 'pending') {
@@ -198,6 +234,9 @@ export default function CustomersManager({
           phone: phone.trim() || null,
           cedula: cedula.trim() || null,
           address: address.trim() || null,
+          logisticsLocationId: selectedLocation?.id || null,
+          city: selectedLocation?.canton || null,
+          province: selectedLocation?.province || null,
           creditLimit: parsedCreditLimit,
           currentDebt: 0,
           totalSpent: 0,
@@ -220,6 +259,7 @@ export default function CustomersManager({
           phone: phone.trim() || undefined,
           cedula: cedula.trim() || undefined,
           address: address.trim() || undefined,
+          ...locationPayload,
           creditLimit: parsedCreditLimit
         };
         if (currentCustomer.status === 'pending') {
@@ -235,6 +275,7 @@ export default function CustomersManager({
           phone: phone.trim() || undefined,
           cedula: cedula.trim() || undefined,
           address: address.trim() || undefined,
+          ...locationPayload,
           creditLimit: parsedCreditLimit,
           currentDebt: 0,
           totalSpent: 0,
@@ -296,7 +337,9 @@ export default function CustomersManager({
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     (c.email || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
     (c.phone || '').includes(searchTerm) ||
-    (c.cedula || '').includes(searchTerm)
+    (c.cedula || '').includes(searchTerm) ||
+    (c.city || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (c.province || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -426,6 +469,12 @@ export default function CustomersManager({
                       <div className="flex items-center gap-1.5">
                         <Mail size={12} className="text-stone-400" />
                         <span>{customer.email}</span>
+                      </div>
+                    )}
+                    {customer.city && (
+                      <div className="flex items-center gap-1.5">
+                        <MapPin size={12} className="text-stone-400" />
+                        <span className="truncate max-w-[200px]">{customer.province ? `${customer.province} / ${customer.city}` : customer.city}</span>
                       </div>
                     )}
                     {customer.address && (
@@ -596,8 +645,65 @@ export default function CustomersManager({
                   </div>
                 </div>
 
+                <div className="space-y-1 relative">
+                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Ciudad</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
+                    {citySearch && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCitySearch('');
+                          setLogisticsLocationId('');
+                          setIsCityPickerOpen(false);
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-800 rounded-md"
+                        title="Limpiar ciudad"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                    <input
+                      type="text"
+                      value={citySearch}
+                      onFocus={() => setIsCityPickerOpen(true)}
+                      onChange={e => {
+                        setCitySearch(e.target.value);
+                        setLogisticsLocationId('');
+                        setIsCityPickerOpen(true);
+                      }}
+                      placeholder="Escribe para buscar ciudad..."
+                      className="w-full pl-8 pr-8 py-2 border border-stone-150 rounded-xl bg-stone-50 focus:bg-white text-xs outline-none focus:ring-2 focus:ring-primary/20 text-stone-700 font-bold"
+                    />
+                  </div>
+                  {isCityPickerOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-stone-100 rounded-xl shadow-xl z-[160] overflow-hidden max-h-56 overflow-y-auto">
+                      {filteredCityOptions.map(location => (
+                        <button
+                          key={location.id}
+                          type="button"
+                          onClick={() => {
+                            setLogisticsLocationId(location.id);
+                            setCitySearch(location.label);
+                            setIsCityPickerOpen(false);
+                          }}
+                          className="w-full px-3 py-2 text-left hover:bg-stone-50"
+                        >
+                          <span className="block text-xs font-bold text-stone-800">{location.canton}</span>
+                          <span className="block text-[10px] text-stone-400">{location.province}</span>
+                        </button>
+                      ))}
+                      {filteredCityOptions.length === 0 && (
+                        <div className="px-3 py-3 text-xs text-stone-400 text-center">
+                          No hay ciudades que coincidan.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Dirección de Despacho</label>
+                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Dirección</label>
                   <input
                     type="text"
                     placeholder="Calle Principal, N° de casa o local"

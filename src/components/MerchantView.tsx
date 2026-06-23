@@ -8,6 +8,9 @@ import PurchasesManager from './PurchasesManager';
 import ReceivablesManager from './ReceivablesManager';
 import CustomersManager from './CustomersManager';
 import CompaniesManager from './CompaniesManager';
+import UsersManager from './UsersManager';
+import ErrorLogsManager from './ErrorLogsManager';
+import LogisticsManager from './LogisticsManager';
 import SettingsManager from './SettingsManager';
 import { Product, Company } from '../types';
 import { CloudAlert, Building, Check, Copy } from 'lucide-react';
@@ -15,8 +18,9 @@ import { getOfflineFallbackActive, setOfflineFallbackActive, OFFLINE_CHANGE_EVEN
 
 const SELECTED_COMPANY_STORAGE_KEY = 'switchshop_selected_company_id';
 const ACTIVE_TAB_STORAGE_KEY = 'switchshop_merchant_active_tab';
-const COMMON_TABS = ['dashboard', 'inventory', 'purchases', 'orders', 'receivables', 'customers', 'settings'];
-const SUPER_ADMIN_TABS = [...COMMON_TABS, 'companies'];
+const COMMON_TABS = ['dashboard', 'inventory', 'purchases', 'orders', 'logistics', 'receivables', 'customers', 'settings'];
+const SYSTEM_TABS = ['companies', 'system-company', 'system-users', 'system-error-logs'];
+const SUPER_ADMIN_TABS = [...COMMON_TABS, ...SYSTEM_TABS];
 
 function getDefaultActiveTab(isSuperAdmin: boolean) {
   return isSuperAdmin ? 'companies' : 'dashboard';
@@ -268,6 +272,7 @@ const MerchantView: React.FC<MerchantViewProps> = ({
             />
           )}
           {activeTab === 'receivables' && <ReceivablesManager companyId={currentCompanyId} />}
+          {activeTab === 'logistics' && <LogisticsManager companyId={currentCompanyId} />}
           {activeTab === 'customers' && (
             <CustomersManager 
               companyId={currentCompanyId} 
@@ -278,7 +283,9 @@ const MerchantView: React.FC<MerchantViewProps> = ({
               onClearPrefill={() => setPrefilledCustomer(null)}
             />
           )}
-          {activeTab === 'companies' && isSuperAdmin && <CompaniesManager companies={companies} />}
+          {(activeTab === 'companies' || activeTab === 'system-company') && isSuperAdmin && <CompaniesManager companies={companies} />}
+          {activeTab === 'system-users' && isSuperAdmin && <UsersManager companies={companies} />}
+          {activeTab === 'system-error-logs' && isSuperAdmin && <ErrorLogsManager />}
           {activeTab === 'settings' && <SettingsManager companyId={currentCompanyId} />}
         </div>
       </main>

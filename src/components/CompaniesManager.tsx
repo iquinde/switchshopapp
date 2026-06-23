@@ -1,30 +1,18 @@
 import React from 'react';
 import { 
   Building, User, Mail, Search, Plus, Trash2, Edit2, X, Check, Save, 
-  Phone, AlertTriangle, Copy, ExternalLink, UserPlus, ShieldCheck
+  Phone, Copy, ExternalLink, UserPlus
 } from 'lucide-react';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db } from '../firebase';
 import { 
-  collection, query, onSnapshot, doc, updateDoc, 
-  addDoc, deleteDoc, serverTimestamp, setDoc, orderBy, limit
+  collection, doc, updateDoc, 
+  deleteDoc, setDoc
 } from 'firebase/firestore';
 import { Company } from '../types';
-import { motion, AnimatePresence } from 'motion/react';
-import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive } from '../lib/offlineDb';
-import { AppRole, UserRoleRecord, normalizeEmail } from '../lib/authz';
+import { motion } from 'motion/react';
 
 interface CompaniesManagerProps {
   companies: Company[];
-}
-
-interface ClientErrorLog {
-  id: string;
-  message: string;
-  code?: string | null;
-  userEmail?: string | null;
-  emailVerified?: boolean;
-  context?: Record<string, any>;
-  createdAt?: any;
 }
 
 const PHONE_AREA_CODES = [
@@ -67,13 +55,6 @@ const parseEmailList = (value: string) => {
 export default function CompaniesManager({ companies }: CompaniesManagerProps) {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
-  const [userRoles, setUserRoles] = React.useState<UserRoleRecord[]>([]);
-  const [roleEmail, setRoleEmail] = React.useState('');
-  const [roleType, setRoleType] = React.useState<AppRole>('company_admin');
-  const [roleCompanyId, setRoleCompanyId] = React.useState('');
-  const [roleStatus, setRoleStatus] = React.useState<'active' | 'inactive'>('active');
-  const [editingRoleEmail, setEditingRoleEmail] = React.useState<string | null>(null);
-  const [clientErrorLogs, setClientErrorLogs] = React.useState<ClientErrorLog[]>([]);
   
   // Create / Edit modal state
   const [isEditing, setIsEditing] = React.useState(false);
@@ -105,39 +86,6 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
   const getStoreUrl = (storeNameValue: string) => {
     return `${window.location.origin}/tienda/${slugifyStoreName(storeNameValue)}`;
   };
-
-  React.useEffect(() => {
-    if (getOfflineFallbackActive()) return;
-
-    const unsubscribe = onSnapshot(query(collection(db, 'userRoles')), (snapshot) => {
-      const roles = snapshot.docs
-        .map(roleDoc => roleDoc.data() as UserRoleRecord)
-        .sort((a, b) => a.email.localeCompare(b.email));
-      setUserRoles(roles);
-    }, (error) => {
-      console.warn("Error al cargar roles de usuario:", error);
-      setUserRoles([]);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  React.useEffect(() => {
-    if (getOfflineFallbackActive()) return;
-
-    const logsQuery = query(collection(db, 'clientErrorLogs'), orderBy('createdAt', 'desc'), limit(8));
-    const unsubscribe = onSnapshot(logsQuery, (snapshot) => {
-      setClientErrorLogs(snapshot.docs.map(logDoc => ({
-        id: logDoc.id,
-        ...logDoc.data(),
-      })) as ClientErrorLog[]);
-    }, (error) => {
-      console.warn("Error al cargar logs de errores:", error);
-      setClientErrorLogs([]);
-    });
-
-    return () => unsubscribe();
-  }, []);
 
   const resetForm = () => {
     setName('');
@@ -240,70 +188,6 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
     }
   };
 
-  const resetRoleForm = () => {
-    setRoleEmail('');
-    setRoleType('company_admin');
-    setRoleCompanyId('');
-    setRoleStatus('active');
-    setEditingRoleEmail(null);
-  };
-
-  const handleEditRole = (role: UserRoleRecord) => {
-    setRoleEmail(role.email);
-    setRoleType(role.role);
-    setRoleCompanyId(role.companyId || '');
-    setRoleStatus(role.status);
-    setEditingRoleEmail(role.email);
-  };
-
-  const handleSaveRole = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const normalizedRoleEmail = normalizeEmail(roleEmail);
-    if (!normalizedRoleEmail) {
-      alert('Ingresa el email del usuario.');
-      return;
-    }
-
-    if (roleType !== 'super_admin' && !roleCompanyId) {
-      alert('Selecciona una empresa para este rol.');
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const existingRole = userRoles.find(role => role.email === normalizedRoleEmail);
-    const payload: UserRoleRecord = {
-      email: normalizedRoleEmail,
-      role: roleType,
-      companyId: roleType === 'super_admin' ? null : roleCompanyId,
-      status: roleStatus,
-      createdAt: existingRole?.createdAt || now,
-      updatedAt: now,
-    };
-
-    try {
-      await setDoc(doc(db, 'userRoles', normalizedRoleEmail), payload);
-      alert('Rol guardado exitosamente');
-      resetRoleForm();
-    } catch (error: any) {
-      console.error("Error al guardar rol de usuario:", error);
-      alert('Error al guardar rol: ' + (error?.message || String(error)));
-    }
-  };
-
-  const handleDeleteRole = async (email: string) => {
-    if (!confirm(`Eliminar el rol asignado a "${email}"?`)) return;
-
-    try {
-      await deleteDoc(doc(db, 'userRoles', email));
-      if (editingRoleEmail === email) resetRoleForm();
-      alert('Rol eliminado');
-    } catch (error: any) {
-      console.error("Error al eliminar rol de usuario:", error);
-      alert('Error al eliminar rol: ' + (error?.message || String(error)));
-    }
-  };
-
   const filtered = companies.filter(c => {
     // Only exclude fixed 'comp-default' to prevent breaking essential system entries
     if (c.id === 'comp-default') {
@@ -314,12 +198,6 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
       c.ownerEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.collaboratorEmails || []).some(email => email.toLowerCase().includes(searchTerm.toLowerCase()));
   });
-
-  const formatLogDate = (value: any) => {
-    if (!value) return 'Sin fecha';
-    const date = value?.seconds ? new Date(value.seconds * 1000) : new Date(value);
-    return Number.isNaN(date.getTime()) ? 'Sin fecha' : date.toLocaleString('es-EC');
-  };
 
   return (
     <div className="space-y-6 pb-8">
@@ -347,176 +225,6 @@ export default function CompaniesManager({ companies }: CompaniesManagerProps) {
           className="pl-9 pr-4 py-2.5 w-full bg-stone-50 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 transition-all font-medium"
         />
       </div>
-
-      <section className="bg-white border border-stone-100 rounded-2xl shadow-sm p-5 space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <ShieldCheck size={18} className="text-stone-700" />
-              <h3 className="font-serif font-bold text-lg text-stone-900">Roles de usuarios</h3>
-            </div>
-            <p className="text-xs text-stone-500 mt-1">Asigna permisos globales o por empresa a cuentas Google verificadas.</p>
-          </div>
-
-          <form onSubmit={handleSaveRole} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1.1fr)_160px_minmax(180px,1fr)_120px_auto] gap-2 w-full lg:max-w-5xl">
-            <input
-              type="email"
-              required
-              placeholder="usuario@gmail.com"
-              value={roleEmail}
-              onChange={(e) => setRoleEmail(e.target.value)}
-              className="px-3 py-2 border border-stone-200 rounded-xl text-stone-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-stone-900 font-medium"
-            />
-            <select
-              value={roleType}
-              onChange={(e) => setRoleType(e.target.value as AppRole)}
-              className="px-3 py-2 border border-stone-200 bg-white rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-bold"
-            >
-              <option value="company_admin">Admin empresa</option>
-              <option value="company_staff">Colaborador</option>
-              <option value="super_admin">Super admin</option>
-            </select>
-            <select
-              value={roleCompanyId}
-              onChange={(e) => setRoleCompanyId(e.target.value)}
-              disabled={roleType === 'super_admin'}
-              className="px-3 py-2 border border-stone-200 bg-white rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-bold disabled:bg-stone-50 disabled:text-stone-400"
-            >
-              <option value="">Empresa</option>
-              {companies.filter(company => company.id !== 'comp-default').map(company => (
-                <option key={company.id} value={company.id}>{company.storeName}</option>
-              ))}
-            </select>
-            <select
-              value={roleStatus}
-              onChange={(e) => setRoleStatus(e.target.value as 'active' | 'inactive')}
-              className="px-3 py-2 border border-stone-200 bg-white rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 font-bold"
-            >
-              <option value="active">Activo</option>
-              <option value="inactive">Inactivo</option>
-            </select>
-            <div className="flex gap-2 sm:col-span-2 xl:col-span-1">
-              {editingRoleEmail && (
-                <button
-                  type="button"
-                  onClick={resetRoleForm}
-                  className="h-10 px-3 border border-stone-200 rounded-xl text-xs font-bold text-stone-500 hover:bg-stone-50"
-                >
-                  Cancelar
-                </button>
-              )}
-              <button
-                type="submit"
-                className="h-10 px-4 bg-stone-900 text-white hover:bg-primary font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow flex-1"
-              >
-                <Save size={14} />
-                <span>{editingRoleEmail ? 'Actualizar' : 'Asignar'}</span>
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {userRoles.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {userRoles.map(role => {
-              const company = companies.find(comp => comp.id === role.companyId);
-              return (
-                <div key={role.email} className="border border-stone-100 rounded-xl p-3 flex items-start justify-between gap-3 bg-stone-50/60">
-                  <div className="min-w-0">
-                    <p className="font-mono text-xs font-bold text-stone-800 truncate">{role.email}</p>
-                    <p className="text-[11px] text-stone-500 mt-1">
-                      {role.role === 'super_admin' ? 'Super admin' : role.role === 'company_admin' ? 'Admin empresa' : 'Colaborador'}
-                      {company ? ` - ${company.storeName}` : ''}
-                    </p>
-                    <span className={`inline-flex mt-2 text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full ${
-                      role.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                    }`}>
-                      {role.status === 'active' ? 'Activo' : 'Inactivo'}
-                    </span>
-                  </div>
-                  <div className="flex shrink-0 gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleEditRole(role)}
-                      className="p-2 text-stone-500 hover:text-stone-900 hover:bg-white rounded-lg transition-colors"
-                      title="Editar rol"
-                    >
-                      <Edit2 size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteRole(role.email)}
-                      className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Eliminar rol"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <section className="bg-white border border-stone-100 rounded-2xl shadow-sm p-5 space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={18} className="text-red-500" />
-              <h3 className="font-serif font-bold text-lg text-stone-900">Errores recientes</h3>
-            </div>
-            <p className="text-xs text-stone-500 mt-1">Ultimos problemas reportados por usuarios al guardar datos.</p>
-          </div>
-          <span className="text-[10px] uppercase tracking-widest font-bold text-stone-400">{clientErrorLogs.length} logs</span>
-        </div>
-
-        {clientErrorLogs.length > 0 ? (
-          <div className="space-y-2">
-            {clientErrorLogs.map(log => {
-              const action = log.context?.action || 'accion_desconocida';
-              const companyContext = log.context?.targetCompanyId || log.context?.companyId || 'sin_empresa';
-              return (
-                <div key={log.id} className="rounded-xl border border-stone-100 bg-stone-50/70 p-3">
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-mono text-xs font-bold text-stone-900 truncate">{log.userEmail || 'usuario sin email'}</p>
-                      <p className="mt-1 text-xs font-semibold text-red-700">{log.code || log.message}</p>
-                      {log.code && <p className="mt-1 text-[11px] text-stone-500 line-clamp-2">{log.message}</p>}
-                    </div>
-                    <div className="text-left sm:text-right shrink-0">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">{formatLogDate(log.createdAt)}</p>
-                      <p className="mt-1 text-[10px] font-mono text-stone-500">{companyContext}</p>
-                    </div>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    <span className="rounded-full bg-white border border-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-600">{action}</span>
-                    {log.context?.paymentMethod && (
-                      <span className="rounded-full bg-white border border-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-600">
-                        pago: {log.context.paymentMethod}
-                      </span>
-                    )}
-                    {log.context?.hasInitialPayment && (
-                      <span className="rounded-full bg-amber-50 border border-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                        con pago inicial
-                      </span>
-                    )}
-                    {log.emailVerified === false && (
-                      <span className="rounded-full bg-red-50 border border-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
-                        email no verificado
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-stone-200 bg-stone-50/70 px-4 py-8 text-center text-xs font-semibold text-stone-400">
-            No hay errores reportados todavia.
-          </div>
-        )}
-      </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filtered.map(comp => (
