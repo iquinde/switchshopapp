@@ -8,7 +8,7 @@ import AboutView from './components/AboutView';
 import ErrorBoundary from './components/ErrorBoundary';
 import ToastHost from './components/ToastHost';
 import { db, auth, googleProvider } from './firebase';
-import { addDoc, collection, getDocs, limit, onSnapshot, query, doc, serverTimestamp, where } from 'firebase/firestore';
+import { addDoc, collection, getDocs, limit, onSnapshot, query, doc, runTransaction, serverTimestamp, where } from 'firebase/firestore';
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -24,7 +24,7 @@ import { Product, CartItem, StoreSettings, Company } from './types';
 import { AnimatePresence } from 'motion/react';
 import { KeyRound, LayoutDashboard, LogIn, Mail, ShieldCheck, Store, User, UserPlus, X } from 'lucide-react';
 import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive, OFFLINE_CHANGE_EVENT } from './lib/offlineDb';
-import { UserRoleRecord, canAccessCompany, isSuperAdminUser, normalizeEmail } from './lib/authz';
+import { BOOTSTRAP_SUPER_ADMIN_EMAILS, UserRoleRecord, canAccessCompany, isSuperAdminUser, normalizeEmail } from './lib/authz';
 import { LogisticsLocation } from './types';
 import { logisticsLocations } from './data/ciudades';
 
@@ -40,26 +40,26 @@ interface LoginScreenProps {
 function getAuthErrorMessage(error: unknown) {
   if (error instanceof FirebaseError) {
     const messages: Record<string, string> = {
-      'auth/unauthorized-domain': 'Este dominio no esta autorizado en Firebase Authentication. Agrega localhost y el dominio publicado en Firebase Console > Authentication > Settings > Authorized domains.',
-      'auth/operation-not-allowed': 'Este metodo de inicio de sesion no esta habilitado en Firebase Authentication. Activa Email/Password y Google en Firebase Console > Authentication > Sign-in method.',
-      'auth/popup-closed-by-user': 'La ventana de Google se cerro antes de completar el inicio de sesion. Intenta nuevamente.',
-      'auth/popup-blocked': 'El navegador bloqueo la ventana de inicio de sesion. Permite popups para esta pagina o intenta de nuevo.',
-      'auth/cancelled-popup-request': 'Se cancelo una solicitud de inicio de sesion anterior. Intenta nuevamente.',
-      'auth/invalid-email': 'Ingresa un correo valido.',
-      'auth/missing-password': 'Ingresa tu contraseÃ±a.',
-      'auth/invalid-credential': 'El usuario o la contraseÃ±a no son correctos.',
+      'auth/unauthorized-domain': 'Este dominio no está autorizado en Firebase Authentication. Agrega localhost y el dominio publicado en Firebase Console > Authentication > Settings > Authorized domains.',
+      'auth/operation-not-allowed': 'Este método de inicio de sesión no está habilitado en Firebase Authentication. Activa Email/Password y Google en Firebase Console > Authentication > Sign-in method.',
+      'auth/popup-closed-by-user': 'La ventana de Google se cerró antes de completar el inicio de sesión. Intenta nuevamente.',
+      'auth/popup-blocked': 'El navegador bloqueó la ventana de inicio de sesión. Permite popups para esta página o intenta de nuevo.',
+      'auth/cancelled-popup-request': 'Se canceló una solicitud de inicio de sesión anterior. Intenta nuevamente.',
+      'auth/invalid-email': 'Ingresa un correo válido.',
+      'auth/missing-password': 'Ingresa tu contraseña.',
+      'auth/invalid-credential': 'El correo o la contraseña no son correctos.',
       'auth/user-not-found': 'No existe una cuenta registrada con ese correo.',
-      'auth/wrong-password': 'La contraseÃ±a no es correcta.',
+      'auth/wrong-password': 'La contraseña no es correcta.',
       'auth/email-already-in-use': 'Ya existe una cuenta registrada con ese correo.',
-      'auth/weak-password': 'La contraseÃ±a debe tener al menos 6 caracteres.',
+      'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
       'auth/too-many-requests': 'Demasiados intentos. Espera un momento e intenta nuevamente.',
-      'auth/network-request-failed': 'No se pudo conectar con Firebase. Revisa tu conexion e intenta de nuevo.',
+      'auth/network-request-failed': 'No se pudo conectar con Firebase. Revisa tu conexión e intenta de nuevo.',
     };
 
     return messages[error.code] || `Firebase Auth (${error.code}): ${error.message}`;
   }
 
-  return 'No se pudo completar la autenticacion. Intentalo nuevamente o verifica los datos de tu cuenta.';
+  return 'No se pudo completar la autenticación. Inténtalo nuevamente o verifica los datos de tu cuenta.';
 }
 
 function LoginScreen({
@@ -85,17 +85,17 @@ function LoginScreen({
     setLocalMessage('');
 
     if (!email.trim()) {
-      setLocalError('Ingresa tu usuario o correo.');
+      setLocalError('Ingresa tu correo.');
       return;
     }
 
     if (!password) {
-      setLocalError('Ingresa tu contraseÃ±a.');
+      setLocalError('Ingresa tu contraseña.');
       return;
     }
 
     if (isRegisterMode && password !== confirmPassword) {
-      setLocalError('Las contraseÃ±as no coinciden.');
+      setLocalError('Las contraseñas no coinciden.');
       return;
     }
 
@@ -112,13 +112,13 @@ function LoginScreen({
     setLocalMessage('');
 
     if (!email.trim()) {
-      setLocalError('Escribe tu correo para enviarte el enlace de recuperacion.');
+      setLocalError('Escribe tu correo para enviarte el enlace de recuperación.');
       return;
     }
 
     try {
       await onForgotPassword(email);
-      setLocalMessage('Te enviamos un enlace para recuperar la contraseÃ±a.');
+      setLocalMessage('Te enviamos un enlace para recuperar la contraseña.');
     } catch {
       // The parent handler already maps the Firebase error into loginError.
     }
@@ -160,10 +160,10 @@ function LoginScreen({
             <div className="space-y-6">
               <div>
                 <h2 className="text-3xl font-serif font-bold tracking-tight text-white lg:text-stone-950">
-                  {isRegisterMode ? 'Crear cuenta' : 'Iniciar sesion'}
+                  {isRegisterMode ? 'Crear cuenta' : 'Iniciar sesión'}
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-white/62 lg:text-stone-500">
-                  Ingresa con usuario y contraseÃ±a, o usa tu cuenta de Google para acceder al sistema.
+                  Ingresa con correo y contraseña, o usa tu cuenta de Google para acceder al sistema.
                 </p>
               </div>
 
@@ -202,7 +202,7 @@ function LoginScreen({
 
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <label className="block">
-                  <span className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-white/50 lg:text-stone-400">Usuario o correo</span>
+                  <span className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-white/50 lg:text-stone-400">Correo</span>
                   <div className="flex h-12 items-center gap-3 rounded-lg border border-white/10 bg-white px-3 text-stone-950 shadow-sm lg:border-stone-200">
                     <Mail size={18} className="shrink-0 text-stone-400" />
                     <input
@@ -217,7 +217,7 @@ function LoginScreen({
                 </label>
 
                 <label className="block">
-                  <span className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-white/50 lg:text-stone-400">ContraseÃ±a</span>
+                  <span className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-white/50 lg:text-stone-400">Contraseña</span>
                   <div className="flex h-12 items-center gap-3 rounded-lg border border-white/10 bg-white px-3 text-stone-950 shadow-sm lg:border-stone-200">
                     <KeyRound size={18} className="shrink-0 text-stone-400" />
                     <input
@@ -225,7 +225,7 @@ function LoginScreen({
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
                       autoComplete={isRegisterMode ? 'new-password' : 'current-password'}
-                      placeholder="Tu contraseÃ±a"
+                      placeholder="Tu contraseña"
                       className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-stone-400"
                     />
                   </div>
@@ -241,7 +241,7 @@ function LoginScreen({
                         value={confirmPassword}
                         onChange={(event) => setConfirmPassword(event.target.value)}
                         autoComplete="new-password"
-                        placeholder="Repite tu contraseÃ±a"
+                        placeholder="Repite tu contraseña"
                         className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-stone-400"
                       />
                     </div>
@@ -265,7 +265,7 @@ function LoginScreen({
                   disabled={isLoggingIn}
                   className="w-full text-center text-sm font-bold text-emerald-300 transition-colors hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-70 lg:text-emerald-700 lg:hover:text-emerald-800"
                 >
-                  Olvide mi contraseÃ±a
+                  Olvide mi contraseña
                 </button>
               )}
 
@@ -408,15 +408,15 @@ function StoreCustomerAuthModal({
       return;
     }
     if (!password) {
-      setLocalError('Ingresa tu contraseÃ±a.');
+      setLocalError('Ingresa tu contraseña.');
       return;
     }
     if (isRegisterMode && password !== confirmPassword) {
-      setLocalError('Las contraseÃ±as no coinciden.');
+      setLocalError('Las contraseñas no coinciden.');
       return;
     }
     if (isRegisterMode && !selectedLocation) {
-      setLocalError('Selecciona tu ciudad para calcular la logistica.');
+      setLocalError('Selecciona tu ciudad para calcular la logística.');
       return;
     }
 
@@ -431,12 +431,12 @@ function StoreCustomerAuthModal({
     setLocalError('');
     setLocalMessage('');
     if (!email.trim()) {
-      setLocalError('Escribe tu correo para enviarte el enlace de recuperacion.');
+      setLocalError('Escribe tu correo para enviarte el enlace de recuperación.');
       return;
     }
     try {
       await onForgotPassword(email);
-      setLocalMessage('Te enviamos un enlace para recuperar la contraseÃ±a.');
+      setLocalMessage('Te enviamos un enlace para recuperar la contraseña.');
     } catch {
       // Firebase error is shown through loginError.
     }
@@ -562,7 +562,7 @@ function StoreCustomerAuthModal({
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-stone-400">ContraseÃ±a</span>
+            <span className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-stone-400">Contraseña</span>
             <div className="flex h-12 items-center gap-3 rounded-lg border border-stone-200 bg-white px-3">
               <KeyRound size={18} className="text-stone-400" />
               <input
@@ -570,7 +570,7 @@ function StoreCustomerAuthModal({
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete={isRegisterMode ? 'new-password' : 'current-password'}
-                placeholder="Tu contraseÃ±a"
+                placeholder="Tu contraseña"
                 className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-stone-900 outline-none placeholder:text-stone-400"
               />
             </div>
@@ -586,7 +586,7 @@ function StoreCustomerAuthModal({
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
                   autoComplete="new-password"
-                  placeholder="Repite tu contraseÃ±a"
+                  placeholder="Repite tu contraseña"
                   className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-stone-900 outline-none placeholder:text-stone-400"
                 />
               </div>
@@ -610,7 +610,7 @@ function StoreCustomerAuthModal({
             disabled={isLoggingIn}
             className="mt-3 w-full text-center text-sm font-bold text-primary transition-colors hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            Olvide mi contraseÃ±a
+            Olvide mi contraseña
           </button>
         )}
 
@@ -681,6 +681,23 @@ function clearAuthEntryContext() {
   } catch {
     // Session storage can be unavailable in restricted browsers.
   }
+}
+
+function getNameParts(displayName?: string | null, email?: string | null) {
+  const cleanName = (displayName || '').trim().replace(/\s+/g, ' ');
+  if (cleanName) {
+    const [firstName, ...lastNameParts] = cleanName.split(' ');
+    const nameParts: Partial<Pick<UserRoleRecord, 'firstName' | 'lastName'>> = {};
+    if (firstName) nameParts.firstName = firstName;
+    const lastName = lastNameParts.join(' ');
+    if (lastName) nameParts.lastName = lastName;
+    return nameParts;
+  }
+
+  const emailName = normalizeEmail(email).split('@')[0]?.replace(/[._-]+/g, ' ').trim();
+  const nameParts: Partial<Pick<UserRoleRecord, 'firstName' | 'lastName'>> = {};
+  if (emailName) nameParts.firstName = emailName;
+  return nameParts;
 }
 
 function isStorefrontRoute() {
@@ -1201,6 +1218,39 @@ export default function App() {
     return () => unsubscribe();
   }, [canLoadStorefrontPublicly, isAuthReady, isOfflineMode, activeCompanyIdForSettings, activeCompany, user]);
 
+  const ensurePrivateAccessUserRole = async (privateUser: any) => {
+    const email = normalizeEmail(privateUser?.email);
+    if (
+      !email ||
+      !privateUser?.emailVerified ||
+      BOOTSTRAP_SUPER_ADMIN_EMAILS.includes(email) ||
+      isOfflineMode
+    ) {
+      return;
+    }
+
+    const roleRef = doc(db, 'userRoles', email);
+
+    await runTransaction(db, async (transaction) => {
+      const roleSnapshot = await transaction.get(roleRef);
+      if (roleSnapshot.exists()) return;
+
+      const now = new Date().toISOString();
+      const nameParts = getNameParts(privateUser.displayName, email);
+      const pendingRole: UserRoleRecord = {
+        email,
+        role: 'company_staff',
+        companyId: null,
+        status: 'inactive',
+        createdAt: now,
+        updatedAt: now,
+        ...nameParts,
+      };
+
+      transaction.set(roleRef, pendingRole);
+    });
+  };
+
   const loginWithGoogle = async () => {
     setAuthEntryContext('private');
     setIsLoggingIn(true);
@@ -1209,6 +1259,7 @@ export default function App() {
     try {
       googleProvider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, googleProvider);
+      await ensurePrivateAccessUserRole(result.user);
       setUser(result.user);
       setIsAuthReady(true);
       setIsLoggingIn(false);

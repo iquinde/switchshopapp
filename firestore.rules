@@ -255,6 +255,16 @@ service cloud.firestore {
              );
     }
 
+    function isOwnPendingUserRoleCreate(roleEmail) {
+      return hasVerifiedEmail() &&
+             request.auth.token.email == roleEmail &&
+             request.resource.data.email == roleEmail &&
+             request.resource.data.role == 'company_staff' &&
+             request.resource.data.status == 'inactive' &&
+             request.resource.data.companyId == null &&
+             isValidUserRole(request.resource.data);
+    }
+
 
     // Client Error Log Validator
     function isValidClientErrorLog(data) {
@@ -406,9 +416,11 @@ service cloud.firestore {
                      request.auth.token.email == roleEmail
                    );
       allow list: if isAdmin();
-      allow create: if isAdmin() &&
+      allow create: if (
+                      isAdmin() &&
                       request.resource.data.email == roleEmail &&
-                      isValidUserRole(request.resource.data);
+                      isValidUserRole(request.resource.data)
+                    ) || isOwnPendingUserRoleCreate(roleEmail);
       allow update: if isAdmin() &&
                       request.resource.data.email == roleEmail &&
                       isValidUserRole(request.resource.data);
