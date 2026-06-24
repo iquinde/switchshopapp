@@ -337,7 +337,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
         </div>
         <button 
           onClick={handleOpenAdd}
-          className="flex items-center space-x-2 bg-primary text-white px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl text-sm sm:text-base font-bold shadow-sm active:scale-95 transition-all w-full sm:w-auto justify-center"
+          className="flex items-center space-x-2 bg-stone-900 text-white px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl text-sm font-bold shadow-sm active:scale-95 transition-all w-full sm:w-auto justify-center hover:bg-primary"
         >
           <Plus size={18} />
           <span>Nuevo Producto</span>

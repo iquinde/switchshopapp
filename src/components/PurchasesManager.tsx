@@ -5,8 +5,10 @@ import {
   Calendar,
   ClipboardList,
   Edit2,
+  Eye,
   Loader2,
   PackagePlus,
+  Check,
   Plus,
   Save,
   Search,
@@ -107,6 +109,7 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
   const [isFormOpen, setIsFormOpen] = React.useState(false);
   const [isProductPickerOpen, setIsProductPickerOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [selectedPurchase, setSelectedPurchase] = React.useState<Purchase | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [productFilter, setProductFilter] = React.useState('todos');
@@ -412,10 +415,10 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center space-x-2 bg-primary text-white px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl text-sm sm:text-base font-bold shadow-sm active:scale-95 transition-all w-full sm:w-auto justify-center"
+          className="flex items-center space-x-2 bg-stone-900 text-white px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl text-sm font-bold shadow-sm active:scale-95 transition-all w-full sm:w-auto justify-center hover:bg-primary"
         >
-          <Plus size={18} />
-          <span>Nueva Compra</span>
+          <Check size={18} />
+          <span>Registrar Compra</span>
         </button>
       </div>
 
@@ -520,6 +523,9 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
                         <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm font-bold text-stone-900">${purchase.total.toFixed(2)}</td>
                         <td className="px-4 py-3 sm:px-6 sm:py-4 text-right">
                           <div className="flex justify-end gap-1 sm:gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => setSelectedPurchase(purchase)} className="p-1.5 sm:p-2 hover:bg-white rounded-lg text-stone-400 hover:text-stone-900 transition-all" title="Ver compra">
+                              <Eye size={14} className="sm:w-4 sm:h-4" />
+                            </button>
                             <button onClick={() => openEdit(purchase)} className="p-1.5 sm:p-2 hover:bg-white rounded-lg text-stone-400 hover:text-primary transition-all" title="Editar compra">
                               <Edit2 size={14} className="sm:w-4 sm:h-4" />
                             </button>
@@ -544,6 +550,40 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
         </div>
       </div>
 
+      <AnimatePresence>
+        {selectedPurchase && (
+          <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-md z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 300 }} className="bg-white w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl p-6 sm:p-8">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-lg sm:text-2xl font-serif font-bold text-stone-900">Compra {selectedPurchase.lot}</h3>
+                  <p className="text-stone-500 text-[11px] sm:text-sm">{formatDate(selectedPurchase.date)}{selectedPurchase.supplier ? ` - ${selectedPurchase.supplier}` : ''}</p>
+                </div>
+                <button onClick={() => setSelectedPurchase(null)} type="button" className="p-2 hover:bg-stone-50 rounded-full transition-colors"><X size={20} /></button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+                <div className="rounded-2xl bg-stone-50 border border-stone-100 p-4"><p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Total</p><p className="mt-1 text-xl font-mono font-bold text-stone-900">${selectedPurchase.total.toFixed(2)}</p></div>
+                <div className="rounded-2xl bg-stone-50 border border-stone-100 p-4"><p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Unidades</p><p className="mt-1 text-xl font-bold text-stone-900">{getPurchaseItems(selectedPurchase).reduce((sum, item) => sum + item.quantity, 0)} u.</p></div>
+                <div className="rounded-2xl bg-stone-50 border border-stone-100 p-4"><p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Tipo</p><p className="mt-1 text-sm font-bold text-stone-900">{isHistoricalPurchase(selectedPurchase) ? 'Histórica' : 'Operativa'}</p></div>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-stone-100 bg-white">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-stone-50 border-b border-stone-100"><tr><th className="px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400">Producto</th><th className="px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400 w-28">Cantidad</th><th className="px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400 w-32">Costo</th><th className="px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400 w-28">Total</th></tr></thead>
+                    <tbody className="divide-y divide-stone-50">
+                      {getPurchaseItems(selectedPurchase).map(item => {
+                        const lineProduct = companyProducts.find(product => product.id === item.productId);
+                        return <tr key={item.productId}><td className="px-3 py-3"><div className="flex items-center gap-3 min-w-[220px]">{lineProduct?.image ? <img src={lineProduct.image} alt="" className="h-10 w-10 rounded-lg object-cover bg-stone-100" referrerPolicy="no-referrer" /> : <div className="h-10 w-10 rounded-lg bg-stone-100" />}<div className="min-w-0"><p className="text-xs font-bold text-stone-900 truncate">{item.productName}</p><p className="text-[10px] text-stone-400">{lineProduct?.sku || 'Sin SKU'}</p></div></div></td><td className="px-3 py-3 text-xs font-bold text-stone-700">{item.quantity}</td><td className="px-3 py-3 text-xs font-bold text-stone-700">${item.cost.toFixed(2)}</td><td className="px-3 py-3 text-xs font-mono font-bold text-stone-900">${item.total.toFixed(2)}</td></tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              {selectedPurchase.notes && <p className="mt-4 rounded-xl bg-stone-50 border border-stone-100 p-3 text-xs text-stone-600">{selectedPurchase.notes}</p>}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {isFormOpen && (
           <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-md z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4">
