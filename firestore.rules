@@ -189,11 +189,15 @@ service cloud.firestore {
     // Payment Transaction Validator
     function isValidTransaction(data) {
       return hasRequiredFields(data, ['id', 'customerId', 'customerName', 'amount', 'paymentMethod', 'date']) &&
-             hasOnlyAllowedFields(data, ['id', 'orderId', 'orderNumber', 'customerId', 'customerName', 'amount', 'paymentMethod', 'referenceNumber', 'bankName', 'date', 'notes', 'companyId']) &&
+             hasOnlyAllowedFields(data, ['id', 'orderId', 'orderNumber', 'customerId', 'customerName', 'amount', 'appliedAmount', 'unappliedAmount', 'applicationStatus', 'allocations', 'paymentMethod', 'referenceNumber', 'bankName', 'date', 'notes', 'companyId']) &&
              data.id is string && data.id.size() > 0 &&
              data.customerId is string &&
              data.customerName is string &&
              data.amount is number && data.amount > 0 &&
+             (!('appliedAmount' in data) || data.appliedAmount is number) &&
+             (!('unappliedAmount' in data) || data.unappliedAmount is number) &&
+             (!('applicationStatus' in data) || data.applicationStatus in ['pending', 'partial', 'applied']) &&
+             (!('allocations' in data) || data.allocations is list) &&
              data.paymentMethod is string &&
              (!('companyId' in data) || data.companyId == null || (data.companyId is string && data.companyId.size() <= 100));
     }
@@ -251,16 +255,6 @@ service cloud.firestore {
              );
     }
 
-    function isSelfPendingUserRoleCreate(roleEmail) {
-      return isAuthenticated() &&
-             request.auth.token.email is string &&
-             request.auth.token.email == roleEmail &&
-             request.resource.data.email == roleEmail &&
-             request.resource.data.role == 'company_staff' &&
-             request.resource.data.status == 'inactive' &&
-             (!('companyId' in request.resource.data) || request.resource.data.companyId == null) &&
-             isValidUserRole(request.resource.data);
-    }
 
     // Client Error Log Validator
     function isValidClientErrorLog(data) {
@@ -412,11 +406,9 @@ service cloud.firestore {
                      request.auth.token.email == roleEmail
                    );
       allow list: if isAdmin();
-      allow create: if (
-                      isAdmin() &&
+      allow create: if isAdmin() &&
                       request.resource.data.email == roleEmail &&
-                      isValidUserRole(request.resource.data)
-                    ) || isSelfPendingUserRoleCreate(roleEmail);
+                      isValidUserRole(request.resource.data);
       allow update: if isAdmin() &&
                       request.resource.data.email == roleEmail &&
                       isValidUserRole(request.resource.data);

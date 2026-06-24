@@ -8,7 +8,7 @@ import AboutView from './components/AboutView';
 import ErrorBoundary from './components/ErrorBoundary';
 import ToastHost from './components/ToastHost';
 import { db, auth, googleProvider } from './firebase';
-import { addDoc, collection, getDoc, getDocs, limit, onSnapshot, query, doc, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { addDoc, collection, getDocs, limit, onSnapshot, query, doc, serverTimestamp, where } from 'firebase/firestore';
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -1201,31 +1201,6 @@ export default function App() {
     return () => unsubscribe();
   }, [canLoadStorefrontPublicly, isAuthReady, isOfflineMode, activeCompanyIdForSettings, activeCompany, user]);
 
-  const ensurePrivateUserRole = React.useCallback(async (currentUser: any, nameOverride = '') => {
-    const email = normalizeEmail(currentUser?.email);
-    if (!currentUser || !email || isOfflineMode) return;
-
-    const roleRef = doc(db, 'userRoles', email);
-    const roleSnap = await getDoc(roleRef);
-    if (roleSnap.exists()) return;
-
-    const displayName = (nameOverride || currentUser.displayName || '').trim();
-    const nameParts = displayName.split(/\s+/).filter(Boolean);
-    const fallbackName = email.split('@')[0] || 'Usuario';
-    const now = new Date().toISOString();
-    const pendingRole: UserRoleRecord = {
-      email,
-      firstName: nameParts[0] || fallbackName,
-      lastName: nameParts.slice(1).join(' ') || 'Pendiente',
-      role: 'company_staff',
-      companyId: null,
-      status: 'inactive',
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await setDoc(roleRef, pendingRole);
-  }, [isOfflineMode]);
   const loginWithGoogle = async () => {
     setAuthEntryContext('private');
     setIsLoggingIn(true);
@@ -1234,7 +1209,6 @@ export default function App() {
     try {
       googleProvider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, googleProvider);
-      await ensurePrivateUserRole(result.user);
       setUser(result.user);
       setIsAuthReady(true);
       setIsLoggingIn(false);
@@ -1253,7 +1227,6 @@ export default function App() {
 
     try {
       const result = await signInWithEmailAndPassword(auth, email.trim(), password);
-      await ensurePrivateUserRole(result.user);
       setUser(result.user);
       setIsAuthReady(true);
       setIsLoggingIn(false);
@@ -1278,7 +1251,6 @@ export default function App() {
       if (!result.user.emailVerified) {
         await sendEmailVerification(result.user);
       }
-      await ensurePrivateUserRole(result.user, name);
       setUser(result.user);
       setIsAuthReady(true);
       setIsLoggingIn(false);
@@ -1287,7 +1259,6 @@ export default function App() {
       if (error instanceof FirebaseError && error.code === 'auth/email-already-in-use') {
         try {
           const result = await signInWithEmailAndPassword(auth, email.trim(), password);
-          await ensurePrivateUserRole(result.user, name);
           setUser(result.user);
           setIsAuthReady(true);
           setIsLoggingIn(false);

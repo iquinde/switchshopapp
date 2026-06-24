@@ -15,6 +15,7 @@ import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive, OFFLINE_
 import ProductImageFallback from './ProductImageFallback';
 import { isRealProductImage } from '../lib/productImages';
 import { findLogisticsLocation, logisticsLocations } from '../data/ciudades';
+import SearchableSelect, { SearchableSelectOption } from './SearchableSelect';
 
 interface OrdersManagerProps {
   products: Product[];
@@ -26,6 +27,20 @@ interface OrdersManagerProps {
   ) => void;
 }
 
+const STATUS_FILTER_OPTIONS: SearchableSelectOption[] = [
+  { value: 'todos', label: 'Todos los Estados' },
+  { value: 'pending', label: 'Pendientes / Nuevos' },
+  { value: 'dispatched', label: 'Despachados / Enviados' },
+  { value: 'completed', label: 'Entregados / Completados' },
+  { value: 'cancelled', label: 'Cancelados' },
+];
+
+const PAYMENT_FILTER_OPTIONS: SearchableSelectOption[] = [
+  { value: 'todos', label: 'Todos' },
+  { value: 'paid', label: 'Pagados' },
+  { value: 'partially_paid', label: 'Pago Parcial' },
+  { value: 'unpaid', label: 'Sin Pagar' },
+];
 export default function OrdersManager({ 
   products, 
   companyId = 'comp-default',
@@ -77,10 +92,12 @@ export default function OrdersManager({
   const [selectedCustomer, setSelectedCustomer] = React.useState<string>('');
   const [customerSearch, setCustomerSearch] = React.useState('');
   const [isCustomerPickerOpen, setIsCustomerPickerOpen] = React.useState(false);
+  const [isProductPickerOpen, setIsProductPickerOpen] = React.useState(false);
   const [newCustomerName, setNewCustomerName] = React.useState('');
   const [newCustomerPhone, setNewCustomerPhone] = React.useState('');
   const [orderDate, setOrderDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [orderItems, setOrderItems] = React.useState<{ product: Product; quantity: number }[]>([]);
+  const [manualProductSearch, setManualProductSearch] = React.useState('');
   const [orderPaymentMethod, setOrderPaymentMethod] = React.useState<'cash' | 'card' | 'transfer' | 'credit'>('cash');
   const [orderPaidAmount, setOrderPaidAmount] = React.useState('');
   const [orderShippingLocationId, setOrderShippingLocationId] = React.useState('');
@@ -101,6 +118,17 @@ export default function OrdersManager({
       .slice(0, 8);
   }, [companyCustomers, customerSearch]);
 
+  const filteredManualProducts = React.useMemo(() => {
+    const term = manualProductSearch.trim().toLowerCase();
+    return companyProducts.filter(product => {
+      if (product.status === 'inactive') return false;
+      if (!term) return true;
+      return product.name.toLowerCase().includes(term) ||
+        product.category.toLowerCase().includes(term) ||
+        (product.sku || '').toLowerCase().includes(term);
+    });
+  }, [companyProducts, manualProductSearch]);
+
   const selectedCustomerData = React.useMemo(() => {
     return companyCustomers.find(customer => customer.id === selectedCustomer);
   }, [companyCustomers, selectedCustomer]);
@@ -110,20 +138,28 @@ export default function OrdersManager({
   const manualTotal = manualSubtotal + manualShippingCost;
 
   const shippingOptions = React.useMemo(() => {
-    if (shippingRates.length > 0) {
-      return shippingRates.map(rate => ({
-        locationId: rate.locationId,
-        label: rate.locationLabel,
-        cost: rate.cost,
-      }));
-    }
+    const ratesByLocationId = new Map(shippingRates.map(rate => [rate.locationId, rate]));
 
-    return logisticsLocations.slice(0, 80).map(location => ({
-      locationId: location.id,
-      label: location.label,
-      cost: 0,
-    }));
+    return logisticsLocations.map(location => {
+      const rate = ratesByLocationId.get(location.id);
+      return {
+        locationId: location.id,
+        label: location.label,
+        cost: rate?.cost || 0,
+        hasConfiguredRate: Boolean(rate),
+      };
+    });
   }, [shippingRates]);
+
+  const shippingSelectOptions = React.useMemo<SearchableSelectOption[]>(() => [
+    { value: '', label: 'Sin envio / Retiro', searchText: 'retiro sin envio recoger local' },
+    ...shippingOptions.map(option => ({
+      value: option.locationId,
+      label: option.label,
+      description: option.hasConfiguredRate ? `$${option.cost.toFixed(2)}` : 'Sin tarifa configurada',
+      searchText: `${option.label} ${option.cost.toFixed(2)}`,
+    })),
+  ], [shippingOptions]);
 
   const openCreateOrder = () => {
     setOrderDate(new Date().toISOString().slice(0, 10));
@@ -996,6 +1032,7 @@ const omitUndefined = <T extends Record<string, any>>(value: T): T => {
         setNewCustomerName('');
         setNewCustomerPhone('');
         setOrderItems([]);
+        setManualProductSearch('');
         setOrderPaidAmount('');
         setOrderShippingLocationId('');
         setOrderShippingCost('0');
@@ -1123,6 +1160,7 @@ const omitUndefined = <T extends Record<string, any>>(value: T): T => {
       // Reset Create Order state
       setIsCreatingOrder(false);
       setOrderItems([]);
+      setManualProductSearch('');
       setSelectedCustomer('');
       setCustomerSearch('');
       setOrderDate(new Date().toISOString().slice(0, 10));
@@ -1238,6 +1276,7 @@ const omitUndefined = <T extends Record<string, any>>(value: T): T => {
 
         setIsCreatingOrder(false);
         setOrderItems([]);
+        setManualProductSearch('');
         setSelectedCustomer('');
         setCustomerSearch('');
         setOrderDate(new Date().toISOString().slice(0, 10));
@@ -1307,31 +1346,22 @@ const omitUndefined = <T extends Record<string, any>>(value: T): T => {
 
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Progreso Pedido</label>
-              <select 
+              <SearchableSelect
                 value={statusFilter}
-                onChange={e => setStatusFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-stone-100 rounded-xl text-xs bg-stone-50 font-medium text-stone-700 outline-none"
-              >
-                <option value="todos">Todos los Estados</option>
-                <option value="pending">Pendientes / Nuevos</option>
-                <option value="dispatched">Despachados / Enviados</option>
-                <option value="completed">Entregados / Completados</option>
-                <option value="cancelled">Cancelados</option>
-              </select>
+                options={STATUS_FILTER_OPTIONS}
+                onChange={setStatusFilter}
+                searchPlaceholder="Buscar estado..."
+              />
             </div>
 
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Estado de Pago</label>
-              <select 
+              <SearchableSelect
                 value={paymentFilter}
-                onChange={e => setPaymentFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-stone-100 rounded-xl text-xs bg-stone-50 font-medium text-stone-700 outline-none"
-              >
-                <option value="todos">Todos</option>
-                <option value="paid">Pagados</option>
-                <option value="partially_paid">Pago Parcial</option>
-                <option value="unpaid">Sin Pagar</option>
-              </select>
+                options={PAYMENT_FILTER_OPTIONS}
+                onChange={setPaymentFilter}
+                searchPlaceholder="Buscar pago..."
+              />
             </div>
           </div>
         </div>
@@ -1533,34 +1563,45 @@ const omitUndefined = <T extends Record<string, any>>(value: T): T => {
                 {/* Items List */}
                 <div className="space-y-3">
                   <h4 className="text-[10px] uppercase font-bold tracking-wider text-stone-400">Productos ({selectedOrder.items.length})</h4>
-                  <div className="divide-y divide-stone-50">
-                    {selectedOrder.items.map((item, index) => (
-                      <div key={index} className="flex items-center gap-3 py-2 text-xs">
-                        <div className="w-10 h-10 overflow-hidden rounded-lg bg-stone-100 flex-shrink-0">
-                          {isRealProductImage(item.image) ? (
-                            <img
-                              src={item.image}
-                              alt=""
-                              className="w-full h-full object-cover"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <ProductImageFallback compact />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-stone-900 truncate">{item.name}</p>
-                          <p className="text-stone-400 font-mono text-[10px]">SKU: {item.sku || 'N/A'}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-stone-900">${(item.price * item.quantity).toFixed(2)}</p>
-                          <p className="text-stone-400 font-medium text-[10px]">{item.quantity} unidades x ${item.price.toFixed(2)}</p>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="overflow-hidden rounded-2xl border border-stone-100 bg-white">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="border-b border-stone-100 bg-stone-50">
+                          <tr>
+                            <th className="px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400">Producto</th>
+                            <th className="w-24 px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400">Cantidad</th>
+                            <th className="w-24 px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400">Precio</th>
+                            <th className="w-24 px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-50">
+                          {selectedOrder.items.map((item, index) => (
+                            <tr key={`${item.id}-${index}`}>
+                              <td className="px-3 py-3">
+                                <div className="flex min-w-[220px] items-center gap-3">
+                                  <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-stone-100">
+                                    {isRealProductImage(item.image) ? (
+                                      <img src={item.image} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <ProductImageFallback compact />
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="truncate text-xs font-bold text-stone-900">{item.name}</p>
+                                    <p className="font-mono text-[10px] text-stone-400">SKU: {item.sku || 'N/A'}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-xs font-bold text-stone-700">{item.quantity}</td>
+                              <td className="px-3 py-3 text-xs font-bold text-stone-700">${item.price.toFixed(2)}</td>
+                              <td className="px-3 py-3 font-mono text-xs font-bold text-stone-900">${(item.price * item.quantity).toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
-
                 {/* Logistics / Dispatch */}
                 <div className="space-y-3 p-4 rounded-xl border border-stone-100">
                   <h4 className="text-[10px] uppercase font-bold tracking-wider text-stone-400 flex items-center justify-between">
@@ -1955,6 +1996,7 @@ const omitUndefined = <T extends Record<string, any>>(value: T): T => {
                   type="button" 
                   onClick={() => {
                     setIsCustomerPickerOpen(false);
+                    setIsProductPickerOpen(false);
                     setIsCreatingOrder(false);
                   }}
                   className="p-2 hover:bg-stone-50 rounded-full transition-colors"
@@ -2094,107 +2136,125 @@ const omitUndefined = <T extends Record<string, any>>(value: T): T => {
 
                 {/* Step 2: Choose Products */}
                 <div className="space-y-3">
-                  <h4 className="text-[10px] font-bold text-stone-400 tracking-wider uppercase">2. Seleccionar Productos</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1 bg-stone-50 rounded-xl border border-stone-100">
-                    {companyProducts.filter(p => p.status !== 'inactive').map(prod => (
-                      <button
-                        key={prod.id}
-                        type="button"
-                        onClick={() => addManualItem(prod)}
-                        disabled={prod.stock <= 0}
-                        className="flex items-center gap-2 p-1.5 bg-white border border-stone-100 rounded-lg text-left active:scale-[0.98] transition-all disabled:opacity-50"
-                      >
-                        <div className="w-8 h-8 rounded overflow-hidden bg-stone-100 shrink-0">
-                          {isRealProductImage(prod.image) ? (
-                            <img src={prod.image} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
-                          ) : (
-                            <ProductImageFallback compact />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-bold text-stone-850 truncate">{prod.name}</p>
-                          <p className="text-[9px] text-stone-400 font-bold">${prod.price.toFixed(2)} (Stock: {prod.stock})</p>
-                        </div>
-                      </button>
-                    ))}
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className="text-[10px] font-bold text-stone-400 tracking-wider uppercase">2. Productos del Pedido</h4>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualProductSearch('');
+                        setIsProductPickerOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-stone-900 px-3 py-1.5 text-[10px] font-bold text-white transition-colors hover:bg-primary"
+                    >
+                      <Plus size={13} />
+                      Agregar Producto
+                    </button>
                   </div>
 
-                  {/* Selected Items details */}
-                  {orderItems.length > 0 && (
-                    <div className="bg-stone-50 p-3 rounded-xl border border-stone-100 divide-y divide-stone-100">
-                      <p className="text-[10px] font-bold text-stone-400 tracking-wider uppercase mb-2">Artículos Seleccionados</p>
-                      {orderItems.map((item, index) => (
-                        <div key={index} className="flex justify-between items-center py-2 text-xs">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-bold text-stone-800 truncate">{item.product.name}</p>
-                            <p className="text-stone-400 text-[9px]">${item.product.price.toFixed(2)} c/u</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="inline-flex h-9 items-center rounded-xl border border-stone-200 bg-white shadow-xs overflow-hidden">
-                              <button
-                                type="button"
-                                onClick={() => changeManualItemQty(item.product.id, item.quantity - 1)}
-                                disabled={item.quantity <= 1}
-                                className="h-full w-8 inline-flex items-center justify-center text-stone-500 hover:bg-stone-50 disabled:opacity-35 disabled:cursor-not-allowed"
-                                title="Restar cantidad"
-                              >
-                                <Minus size={13} />
-                              </button>
-                              <input
-                                type="number"
-                                inputMode="numeric"
-                                min="1"
-                                max={item.product.stock}
-                                value={item.quantity}
-                                onFocus={e => e.currentTarget.select()}
-                                onClick={e => e.currentTarget.select()}
-                                onChange={e => changeManualItemQty(item.product.id, parseInt(e.target.value, 10))}
-                                className="h-full w-11 border-x border-stone-100 bg-white text-center text-xs font-bold text-stone-800 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => changeManualItemQty(item.product.id, item.quantity + 1)}
-                                disabled={item.quantity >= item.product.stock}
-                                className="h-full w-8 inline-flex items-center justify-center text-stone-500 hover:bg-stone-50 disabled:opacity-35 disabled:cursor-not-allowed"
-                                title="Sumar cantidad"
-                              >
-                                <Plus size={13} />
-                              </button>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => removeManualItem(item.product.id)}
-                              className="text-red-500 p-1 hover:bg-stone-100 rounded"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                  <div className="overflow-hidden rounded-2xl border border-stone-100 bg-white">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="border-b border-stone-100 bg-stone-50">
+                          <tr>
+                            <th className="px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400">Producto</th>
+                            <th className="w-28 px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400">Cantidad</th>
+                            <th className="w-24 px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400">Precio</th>
+                            <th className="w-24 px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-400">Total</th>
+                            <th className="w-10 px-3 py-2" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-50">
+                          {orderItems.map(item => (
+                            <tr key={item.product.id} className="align-middle">
+                              <td className="px-3 py-3">
+                                <div className="flex min-w-[220px] items-center gap-3">
+                                  <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-stone-100">
+                                    {isRealProductImage(item.product.image) ? (
+                                      <img src={item.product.image} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <ProductImageFallback compact />
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="truncate text-xs font-bold text-stone-900">{item.product.name}</p>
+                                    <p className="text-[10px] text-stone-400">
+                                      Stock: <span className="font-bold text-stone-600">{item.product.stock} u.</span>
+                                      {item.product.sku ? ` - ${item.product.sku}` : ''}
+                                    </p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3">
+                                <div className="inline-flex h-9 items-center overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xs">
+                                  <button
+                                    type="button"
+                                    onClick={() => changeManualItemQty(item.product.id, item.quantity - 1)}
+                                    disabled={item.quantity <= 1}
+                                    className="inline-flex h-full w-8 items-center justify-center text-stone-500 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-35"
+                                    title="Restar cantidad"
+                                  >
+                                    <Minus size={13} />
+                                  </button>
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min="1"
+                                    max={item.product.stock}
+                                    value={item.quantity}
+                                    onFocus={e => e.currentTarget.select()}
+                                    onClick={e => e.currentTarget.select()}
+                                    onChange={e => changeManualItemQty(item.product.id, parseInt(e.target.value, 10))}
+                                    className="h-full w-11 border-x border-stone-100 bg-white text-center text-xs font-bold text-stone-800 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => changeManualItemQty(item.product.id, item.quantity + 1)}
+                                    disabled={item.quantity >= item.product.stock}
+                                    className="inline-flex h-full w-8 items-center justify-center text-stone-500 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-35"
+                                    title="Sumar cantidad"
+                                  >
+                                    <Plus size={13} />
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-xs font-bold text-stone-700">${item.product.price.toFixed(2)}</td>
+                              <td className="px-3 py-3 font-mono text-xs font-bold text-stone-900">${(item.product.price * item.quantity).toFixed(2)}</td>
+                              <td className="px-3 py-3 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => removeManualItem(item.product.id)}
+                                  className="grid h-8 w-8 place-items-center rounded-lg text-stone-400 hover:bg-red-50 hover:text-red-600"
+                                  title="Quitar producto"
+                                >
+                                  <X size={15} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  )}
+                    {orderItems.length === 0 && (
+                      <div className="bg-stone-50/40 py-10 text-center text-stone-400">
+                        <Plus size={28} className="mx-auto mb-3 opacity-20" />
+                        <p className="text-xs">Agrega productos desde el selector.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-
                 {/* Step 3: Shipping */}
                 <div className="space-y-3 pt-3 border-t border-stone-100">
                   <h4 className="text-[10px] font-bold text-stone-400 tracking-wider uppercase">3. Logistica de Envio</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-3">
                     <div className="space-y-1.5">
                       <label className="text-[10px] text-stone-400 font-bold uppercase block">Destino</label>
-                      <select
+                      <SearchableSelect
                         value={orderShippingLocationId}
-                        onChange={e => {
-                          applyShippingLocation(e.target.value);
-                        }}
-                        className="w-full px-3 py-2 border border-stone-100 rounded-xl bg-stone-50 focus:bg-white text-xs font-bold text-stone-700 outline-none"
-                      >
-                        <option value="">Sin envio / Retiro</option>
-                        {shippingOptions.map(option => (
-                          <option key={option.locationId} value={option.locationId}>
-                            {option.label}{option.cost > 0 ? ` - $${option.cost.toFixed(2)}` : ''}
-                          </option>
-                        ))}
-                      </select>
+                        options={shippingSelectOptions}
+                        onChange={applyShippingLocation}
+                        placeholder="Sin envio / Retiro"
+                        searchPlaceholder="Buscar provincia o canton..."
+                      />
                       {shippingRates.length === 0 && (
                         <p className="text-[10px] text-amber-600 font-semibold">Configura tarifas en Logistica para aplicar costos automaticamente.</p>
                       )}
@@ -2312,6 +2372,7 @@ const omitUndefined = <T extends Record<string, any>>(value: T): T => {
                   type="button"
                   onClick={() => {
                     setIsCustomerPickerOpen(false);
+                    setIsProductPickerOpen(false);
                     setIsCreatingOrder(false);
                   }}
                   className="flex-1 py-3 border border-stone-200 text-stone-500 rounded-xl font-bold transition-colors text-xs"
@@ -2328,6 +2389,95 @@ const omitUndefined = <T extends Record<string, any>>(value: T): T => {
                 </button>
               </div>
             </motion.form>
+            <AnimatePresence>
+              {isProductPickerOpen && (
+                <div className="fixed inset-0 z-[130] flex items-end justify-center bg-stone-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.97, y: 18 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.97, y: 18 }}
+                    className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]"
+                  >
+                    <div className="flex flex-col gap-3 border-b border-stone-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                      <div>
+                        <h4 className="font-serif text-lg font-bold text-stone-900">Seleccionar producto</h4>
+                        <p className="text-[11px] text-stone-500">Filtra, revisa stock y agrega el producto al pedido de venta.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsProductPickerOpen(false)}
+                        className="absolute right-4 top-4 rounded-full p-2 hover:bg-stone-50 sm:static"
+                      >
+                        <X size={19} />
+                      </button>
+                    </div>
+
+                    <div className="border-b border-stone-100 p-4 sm:p-5">
+                      <div className="relative group">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 transition-colors group-focus-within:text-primary" size={16} />
+                        <input
+                          type="text"
+                          placeholder="Buscar por nombre, SKU o categoria..."
+                          value={manualProductSearch}
+                          onChange={e => setManualProductSearch(e.target.value)}
+                          className="w-full rounded-xl border border-stone-100 bg-stone-50 py-2.5 pl-9 pr-4 text-xs outline-none transition-all focus:bg-white focus:ring-2 focus:ring-primary/20"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {filteredManualProducts.map(product => {
+                          const selectedLine = orderItems.find(item => item.product.id === product.id);
+                          return (
+                            <button
+                              key={product.id}
+                              type="button"
+                              onClick={() => addManualItem(product)}
+                              disabled={product.stock <= 0}
+                              className={`rounded-2xl border bg-white p-3 text-left transition-all hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 ${
+                                selectedLine ? 'border-primary/40 ring-2 ring-primary/10' : 'border-stone-100 hover:border-stone-200'
+                              }`}
+                            >
+                              <div className="flex gap-3">
+                                <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-stone-100">
+                                  {isRealProductImage(product.image) ? (
+                                    <img src={product.image} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <ProductImageFallback compact />
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="line-clamp-2 text-xs font-bold text-stone-900">{product.name}</p>
+                                  <p className="mt-1 text-[10px] font-semibold text-stone-400">{product.category}</p>
+                                  <div className="mt-2 flex flex-wrap gap-1.5">
+                                    <span className="rounded border border-stone-100 bg-stone-50 px-1.5 py-0.5 text-[9px] font-bold text-stone-500">Stock {product.stock}</span>
+                                    <span className="rounded border border-stone-100 bg-stone-50 px-1.5 py-0.5 text-[9px] font-bold text-stone-500">Precio ${product.price.toFixed(2)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="mt-3 flex items-center justify-between border-t border-stone-50 pt-2">
+                                <span className="font-mono text-[10px] text-stone-400">{product.sku || 'Sin SKU'}</span>
+                                <span className={`text-[10px] font-bold ${selectedLine ? 'text-primary' : 'text-stone-900'}`}>
+                                  {selectedLine ? `Agregado (${selectedLine.quantity})` : 'Agregar'}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {filteredManualProducts.length === 0 && (
+                        <div className="py-14 text-center text-stone-400">
+                          <Plus size={32} className="mx-auto mb-3 opacity-20" />
+                          <p className="text-xs">No hay productos que coincidan.</p>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
           </div>
         )}
       </AnimatePresence>

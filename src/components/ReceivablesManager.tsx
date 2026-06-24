@@ -32,9 +32,12 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
   const [payRef, setPayRef] = React.useState('');
   const [payNotes, setPayNotes] = React.useState('');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [applyingTransaction, setApplyingTransaction] = React.useState<PaymentTransaction | null>(null);
+  const [applyAmounts, setApplyAmounts] = React.useState<Record<string, string>>({});
+  const [isApplyingPayment, setIsApplyingPayment] = React.useState(false);
 
   // Active view tab inside Receivables
-  const [activeSubTab, setActiveSubTab] = React.useState<'clients' | 'orders' | 'history'>('clients');
+  const [activeSubTab, setActiveSubTab] = React.useState<'clients' | 'orders' | 'pending' | 'history'>('clients');
 
   const [isOfflineMode, setIsOfflineMode] = React.useState(getOfflineFallbackActive());
 
@@ -168,11 +171,43 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
     o.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleApplyGlobalPayment = async (e: React.FormEvent) => {
+  const getUnappliedAmount = (transaction: PaymentTransaction) => {
+    if (typeof transaction.unappliedAmount === 'number') return transaction.unappliedAmount;
+    if (transaction.applicationStatus) return Math.max(0, transaction.amount - (transaction.appliedAmount || 0));
+    return 0;
+  };
+
+  const pendingApplicationTransactions = companyTransactions.filter(transaction => getUnappliedAmount(transaction) > 0.009);
+
+  const applyingCustomerOrders = React.useMemo(() => {
+    if (!applyingTransaction) return [];
+    return companyOrders
+      .filter(order => order.customerId === applyingTransaction.customerId && order.paymentMethod === 'credit' && order.paymentStatus !== 'paid' && order.status !== 'cancelled')
+      .sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+  }, [applyingTransaction, companyOrders]);
+
+  const applyTotal = Object.values(applyAmounts).reduce((sum, value) => sum + (parseFloat(value) || 0), 0);
+
+  const resetPaymentForm = () => {
+    setPayAmount('');
+    setPayNotes('');
+    setPayBank('');
+    setPayRef('');
+    setSelectedCustomerId('');
+    setSelectedOrderId('');
+  };
+
+  const openApplicationDialog = (transaction: PaymentTransaction) => {
+    setApplyingTransaction(transaction);
+    setApplyAmounts({});
+    setIsRecording(true);
+  };
+
+  const handleRegisterPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(payAmount);
     if (!amount || amount <= 0) {
-      alert('Monto inválido');
+      alert('Monto invalido');
       return;
     }
 
@@ -181,280 +216,156 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
       return;
     }
 
-    setIsSubmitting(true);
-
-    if (getOfflineFallbackActive()) {
-      try {
-        const custObj = offlineDb.getCustomers().find(c => c.id === selectedCustomerId);
-        if (!custObj) throw new Error('Cliente no existe');
-
-        const currentDebt = custObj.currentDebt || 0;
-
-        // Update customer global debt
-        offlineDb.saveCustomer({
-          ...custObj,
-          currentDebt: Math.max(0, currentDebt - amount)
-        });
-
-        // Distribute payment across customer's pending order balances starting from oldest
-        let remainingPayment = amount;
-        let customerOrders = offlineDb.getOrders()
-          .filter(o => o.customerId === selectedCustomerId && o.paymentMethod === 'credit' && o.paymentStatus !== 'paid' && o.status !== 'cancelled');
-
-        // Prioritize specific order if selected
-        if (selectedOrderId) {
-          const targetOrder = customerOrders.find(o => o.id === selectedOrderId);
-          if (targetOrder) {
-            const orderRemaining = targetOrder.total - targetOrder.amountPaid;
-            const paymentToApply = Math.min(remainingPayment, orderRemaining);
-
-            const newPaid = targetOrder.amountPaid + paymentToApply;
-            const newStatus = newPaid >= targetOrder.total - 0.01 ? 'paid' : 'partially_paid';
-
-            offlineDb.saveOrder({
-              ...targetOrder,
-              amountPaid: newPaid,
-              paymentStatus: newStatus
-            });
-
-            remainingPayment -= paymentToApply;
-            customerOrders = customerOrders.filter(o => o.id !== selectedOrderId);
-          }
-        }
-
-        // Apply remaining payment to other credit orders
-        for (const order of customerOrders) {
-          if (remainingPayment <= 0.009) break;
-
-          const orderRemaining = order.total - order.amountPaid;
-          const paymentToApply = Math.min(remainingPayment, orderRemaining);
-
-          const newPaid = order.amountPaid + paymentToApply;
-          const newStatus = newPaid >= order.total - 0.01 ? 'paid' : 'partially_paid';
-
-          offlineDb.saveOrder({
-            ...order,
-            amountPaid: newPaid,
-            paymentStatus: newStatus
-          });
-
-          remainingPayment -= paymentToApply;
-        }
-
-        // Record transaction log
-        offlineDb.saveTransaction({
-          orderId: selectedOrderId || 'multiple-orders',
-          orderNumber: selectedOrderId ? selectedOrderId.slice(-6).toUpperCase() : 'ABONO',
-          customerId: selectedCustomerId,
-          customerName: custObj.name || 'Cliente Registrar',
-          amount: amount,
-          paymentMethod: payMethod as any,
-          referenceNumber: payRef || '',
-          bankName: payBank || '',
-          notes: payNotes || 'Abono general a cuenta corriente'
-        });
-
-        // Reset
-        setIsRecording(false);
-        setPayAmount('');
-        setPayNotes('');
-        setPayBank('');
-        setPayRef('');
-        setSelectedCustomerId('');
-        setSelectedOrderId('');
-        alert('Depósito/transferencia registrado y saldo actualizado! (Modo Local)');
-      } catch (err) {
-        alert('Error registrando cobro localmente');
-      } finally {
-        setIsSubmitting(false);
-      }
+    const customerObj = customers.find(c => c.id === selectedCustomerId);
+    if (!customerObj) {
+      alert('Cliente no existe');
       return;
     }
 
+    setIsSubmitting(true);
+
+    const transactionPayload: Omit<PaymentTransaction, 'id'> = {
+      orderId: 'pending-application',
+      orderNumber: 'PENDIENTE',
+      customerId: selectedCustomerId,
+      customerName: customerObj.name || 'Cliente Registrar',
+      amount,
+      appliedAmount: 0,
+      unappliedAmount: amount,
+      applicationStatus: 'pending',
+      allocations: [],
+      paymentMethod: payMethod,
+      referenceNumber: payRef || '',
+      bankName: payBank || '',
+      date: serverTimestamp(),
+      notes: payNotes || 'Cobro registrado pendiente de aplicar',
+      companyId: companyId === 'all' ? customerObj.companyId : companyId,
+    };
+
     try {
-      const batch = writeBatch(db);
-
-      // We can apply payment dynamically to the oldest credit orders of this customer!
-      // This is a standard and highly professional accounting practice.
-      const customerRef = doc(db, 'customers', selectedCustomerId);
-      const customerSnap = await getDoc(customerRef);
-      if (!customerSnap.exists()) throw new Error('Cliente no existe');
-
-      const customerData = customerSnap.data();
-      const currentDebt = customerData.currentDebt || 0;
-
-      // Permite registrar abonos libremente, reduciendo la deuda hasta $0.00.
-
-      // Update customer global debt
-      batch.update(customerRef, {
-        currentDebt: Math.max(0, currentDebt - amount)
-      });
-
-      // Distribute payment across customer's pending order balances starting from oldest
-      let remainingPayment = amount;
-      let customerOrders = orders
-        .filter(o => o.customerId === selectedCustomerId && o.paymentMethod === 'credit' && o.paymentStatus !== 'paid' && o.status !== 'cancelled')
-        .sort((a, b) => {
-          const aSeconds = a.createdAt?.seconds || 0;
-          const bSeconds = b.createdAt?.seconds || 0;
-          return aSeconds - bSeconds; // ASC order (oldest first)
+      if (getOfflineFallbackActive()) {
+        const saved = offlineDb.saveTransaction({
+          ...transactionPayload,
+          date: new Date().toISOString(),
+          paymentMethod: payMethod as any,
         });
-
-      // Prioritize specific order if selected
-      if (selectedOrderId) {
-        const targetOrder = customerOrders.find(o => o.id === selectedOrderId);
-        if (targetOrder) {
-          const orderRemaining = targetOrder.total - targetOrder.amountPaid;
-          const paymentToApply = Math.min(remainingPayment, orderRemaining);
-
-          const orderRef = doc(db, 'orders', targetOrder.id);
-          const newPaid = targetOrder.amountPaid + paymentToApply;
-          const newStatus = newPaid >= targetOrder.total - 0.01 ? 'paid' : 'partially_paid';
-
-          batch.update(orderRef, {
-            amountPaid: newPaid,
-            paymentStatus: newStatus
-          });
-
-          remainingPayment -= paymentToApply;
-          customerOrders = customerOrders.filter(o => o.id !== selectedOrderId);
-        }
+        resetPaymentForm();
+        openApplicationDialog(saved);
+        setActiveSubTab('pending');
+        return;
       }
 
-      // Apply remaining payment to other credit orders
-      for (const order of customerOrders) {
-        if (remainingPayment <= 0.009) break;
-
-        const orderRemaining = order.total - order.amountPaid;
-        const paymentToApply = Math.min(remainingPayment, orderRemaining);
-
-        const orderRef = doc(db, 'orders', order.id);
-        const newPaid = order.amountPaid + paymentToApply;
-        const newStatus = newPaid >= order.total - 0.01 ? 'paid' : 'partially_paid';
-
-        batch.update(orderRef, {
-          amountPaid: newPaid,
-          paymentStatus: newStatus
-        });
-
-        remainingPayment -= paymentToApply;
-      }
-
-      // Record transaction log
       const transactionRef = doc(collection(db, 'paymentTransactions'));
-      const transactionData: PaymentTransaction = {
-        id: transactionRef.id,
-        orderId: selectedOrderId || 'multiple-orders',
-        orderNumber: selectedOrderId ? selectedOrderId.slice(-6).toUpperCase() : 'ABONO',
-        customerId: selectedCustomerId,
-        customerName: customerData.name || 'Cliente Registrar',
-        amount: amount,
-        paymentMethod: payMethod,
-        referenceNumber: payRef || '',
-        bankName: payBank || '',
-        date: serverTimestamp(),
-        notes: payNotes || 'Abono general a cuenta corriente',
-        companyId: companyId === 'all' ? customerData.companyId : companyId
-      };
-      
-      batch.set(transactionRef, transactionData);
+      const savedTransaction: PaymentTransaction = { id: transactionRef.id, ...transactionPayload };
+      await writeBatch(db).set(transactionRef, savedTransaction).commit();
 
-      await batch.commit();
-
-      // Reset
-      setIsRecording(false);
-      setPayAmount('');
-      setPayNotes('');
-      setPayBank('');
-      setPayRef('');
-      setSelectedCustomerId('');
-      setSelectedOrderId('');
-      alert('Depósito/transferencia registrado y saldo actualizado!');
+      resetPaymentForm();
+      openApplicationDialog(savedTransaction);
+      setActiveSubTab('pending');
     } catch (err) {
-      console.warn("Record receivables payment failed in cloud, executing locally:", err);
-      setOfflineFallbackActive(true);
-      try {
-        const custObj = offlineDb.getCustomers().find(c => c.id === selectedCustomerId);
-        if (custObj) {
-          const currentDebt = custObj.currentDebt || 0;
-          offlineDb.saveCustomer({
-            ...custObj,
-            currentDebt: Math.max(0, currentDebt - amount)
-          });
-
-          let remainingPayment = amount;
-          let customerOrders = offlineDb.getOrders()
-            .filter(o => o.customerId === selectedCustomerId && o.paymentMethod === 'credit' && o.paymentStatus !== 'paid' && o.status !== 'cancelled');
-
-          // Prioritize specific order if selected
-          if (selectedOrderId) {
-            const targetOrder = customerOrders.find(o => o.id === selectedOrderId);
-            if (targetOrder) {
-              const orderRemaining = targetOrder.total - targetOrder.amountPaid;
-              const paymentToApply = Math.min(remainingPayment, orderRemaining);
-
-              const newPaid = targetOrder.amountPaid + paymentToApply;
-              const newStatus = newPaid >= targetOrder.total - 0.01 ? 'paid' : 'partially_paid';
-
-              offlineDb.saveOrder({
-                ...targetOrder,
-                amountPaid: newPaid,
-                paymentStatus: newStatus
-              });
-
-              remainingPayment -= paymentToApply;
-              customerOrders = customerOrders.filter(o => o.id !== selectedOrderId);
-            }
-          }
-
-          // Apply remaining payment to other credit orders
-          for (const order of customerOrders) {
-            if (remainingPayment <= 0.009) break;
-
-            const orderRemaining = order.total - order.amountPaid;
-            const paymentToApply = Math.min(remainingPayment, orderRemaining);
-
-            const newPaid = order.amountPaid + paymentToApply;
-            const newStatus = newPaid >= order.total - 0.01 ? 'paid' : 'partially_paid';
-
-            offlineDb.saveOrder({
-              ...order,
-              amountPaid: newPaid,
-              paymentStatus: newStatus
-            });
-
-            remainingPayment -= paymentToApply;
-          }
-
-          offlineDb.saveTransaction({
-            orderId: selectedOrderId || 'multiple-orders',
-            orderNumber: selectedOrderId ? selectedOrderId.slice(-6).toUpperCase() : 'ABONO',
-            customerId: selectedCustomerId,
-            customerName: custObj.name || 'Cliente Registrar',
-            amount: amount,
-            paymentMethod: payMethod as any,
-            referenceNumber: payRef || '',
-            bankName: payBank || '',
-            notes: payNotes || 'Abono general a cuenta corriente'
-          });
-
-          setIsRecording(false);
-          setPayAmount('');
-          setPayNotes('');
-          setPayBank('');
-          setPayRef('');
-          setSelectedCustomerId('');
-          setSelectedOrderId('');
-          alert('Depósito/transferencia registrado y saldo actualizado! (Modo Local Activo)');
-        }
-      } catch (fErr) {
-        alert('Error registrando cobro: ' + err);
-      }
+      console.warn('Error registrando cobro:', err);
+      alert('Error registrando cobro: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleApplyRegisteredPayment = async () => {
+    if (!applyingTransaction) return;
+    const unappliedAmount = getUnappliedAmount(applyingTransaction);
+    const allocations = applyingCustomerOrders
+      .map(order => {
+        const requestedAmount = Math.max(0, parseFloat(applyAmounts[order.id]) || 0);
+        const orderBalance = Math.max(0, order.total - order.amountPaid);
+        return {
+          order,
+          amount: Math.min(requestedAmount, orderBalance),
+        };
+      })
+      .filter(item => item.amount > 0.009);
+
+    const totalToApply = allocations.reduce((sum, item) => sum + item.amount, 0);
+    if (totalToApply <= 0) {
+      alert('Ingresa un valor para aplicar al menos a un pedido.');
+      return;
+    }
+    if (totalToApply > unappliedAmount + 0.009) {
+      alert('El total aplicado no puede superar el saldo pendiente del cobro.');
+      return;
+    }
+
+    setIsApplyingPayment(true);
+    try {
+      if (getOfflineFallbackActive()) {
+        allocations.forEach(({ order, amount }) => {
+          const newPaid = order.amountPaid + amount;
+          offlineDb.saveOrder({
+            ...order,
+            amountPaid: newPaid,
+            paymentStatus: newPaid >= order.total - 0.01 ? 'paid' : 'partially_paid',
+          });
+        });
+        const customer = offlineDb.getCustomers().find(c => c.id === applyingTransaction.customerId);
+        if (customer) {
+          offlineDb.saveCustomer({ ...customer, currentDebt: Math.max(0, (customer.currentDebt || 0) - totalToApply) });
+        }
+        offlineDb.saveTransaction({
+          ...applyingTransaction,
+          appliedAmount: (applyingTransaction.appliedAmount || 0) + totalToApply,
+          unappliedAmount: Math.max(0, unappliedAmount - totalToApply),
+          applicationStatus: unappliedAmount - totalToApply <= 0.009 ? 'applied' : 'partial',
+          allocations: [
+            ...(applyingTransaction.allocations || []),
+            ...allocations.map(({ order, amount }) => ({ orderId: order.id, orderNumber: order.id.slice(-6).toUpperCase(), amount, appliedAt: new Date().toISOString() })),
+          ],
+          orderId: allocations.length === 1 ? allocations[0].order.id : 'multiple-orders',
+          orderNumber: allocations.length === 1 ? allocations[0].order.id.slice(-6).toUpperCase() : 'MULTIPLE',
+        });
+        setApplyingTransaction(null);
+        setApplyAmounts({});
+        return;
+      }
+
+      const batch = writeBatch(db);
+      allocations.forEach(({ order, amount }) => {
+        const newPaid = order.amountPaid + amount;
+        batch.update(doc(db, 'orders', order.id), {
+          amountPaid: newPaid,
+          paymentStatus: newPaid >= order.total - 0.01 ? 'paid' : 'partially_paid',
+        });
+      });
+
+      const customerRef = doc(db, 'customers', applyingTransaction.customerId);
+      const customerSnap = await getDoc(customerRef);
+      if (customerSnap.exists()) {
+        const currentDebt = customerSnap.data().currentDebt || 0;
+        batch.update(customerRef, { currentDebt: Math.max(0, currentDebt - totalToApply) });
+      }
+
+      const remaining = Math.max(0, unappliedAmount - totalToApply);
+      batch.update(doc(db, 'paymentTransactions', applyingTransaction.id), {
+        appliedAmount: (applyingTransaction.appliedAmount || 0) + totalToApply,
+        unappliedAmount: remaining,
+        applicationStatus: remaining <= 0.009 ? 'applied' : 'partial',
+        allocations: [
+          ...(applyingTransaction.allocations || []),
+          ...allocations.map(({ order, amount }) => ({ orderId: order.id, orderNumber: order.id.slice(-6).toUpperCase(), amount, appliedAt: new Date().toISOString() })),
+        ],
+        orderId: allocations.length === 1 ? allocations[0].order.id : 'multiple-orders',
+        orderNumber: allocations.length === 1 ? allocations[0].order.id.slice(-6).toUpperCase() : 'MULTIPLE',
+      });
+
+      await batch.commit();
+      setApplyingTransaction(null);
+      setApplyAmounts({});
+      setIsRecording(false);
+    } catch (err) {
+      console.warn('Error aplicando cobro:', err);
+      alert('Error aplicando cobro: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsApplyingPayment(false);
+    }
+  };
   // Quick prepopulate client from credit click
   const openRecordingForClient = (client: Customer) => {
     setSelectedCustomerId(client.id);
@@ -525,10 +436,11 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
       </div>
 
       {/* Sub Tabs */}
-      <div className="flex bg-stone-100 p-1 rounded-xl max-w-md w-full">
+      <div className="flex flex-wrap bg-stone-100 p-1 rounded-xl max-w-3xl w-full">
         {[
           { id: 'clients', label: 'Clientes con Deuda' },
           { id: 'orders', label: 'Pedidos a Crédito' },
+          { id: 'pending', label: 'Pendientes de Aplicar' },
           { id: 'history', label: 'Historial de Cobros' }
         ].map((tab) => (
           <button
@@ -546,7 +458,7 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
       </div>
 
       {/* Primary search bar */}
-      {activeSubTab !== 'history' && (
+      {activeSubTab !== 'history' && activeSubTab !== 'pending' && (
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={16} />
           <input 
@@ -659,6 +571,50 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
           </div>
         )}
 
+        {activeSubTab === 'pending' && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-stone-50 border-b border-stone-100">
+                <tr>
+                  <th className="px-6 py-4 text-xs font-bold text-stone-400 uppercase tracking-widest">Cliente</th>
+                  <th className="px-6 py-4 text-xs font-bold text-stone-400 uppercase tracking-widest">Cobro</th>
+                  <th className="px-6 py-4 text-xs font-bold text-stone-400 uppercase tracking-widest">Saldo por Aplicar</th>
+                  <th className="px-6 py-4 text-xs font-bold text-stone-400 uppercase tracking-widest">Referencia</th>
+                  <th className="px-6 py-4 text-xs font-bold text-stone-400 uppercase tracking-widest text-right">Accion</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-50">
+                {pendingApplicationTransactions.map(transaction => (
+                  <tr key={transaction.id} className="hover:bg-stone-50/50 transition-colors">
+                    <td className="px-6 py-4 text-xs font-bold text-stone-900">{transaction.customerName}</td>
+                    <td className="px-6 py-4 text-xs font-bold text-green-700">${transaction.amount.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-amber-600">${getUnappliedAmount(transaction).toFixed(2)}</td>
+                    <td className="px-6 py-4 text-xs text-stone-500">
+                      <span className="font-bold capitalize">{transaction.paymentMethod}</span>
+                      {transaction.referenceNumber && <span className="block font-mono text-[10px]">Ref: {transaction.referenceNumber}</span>}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => openApplicationDialog(transaction)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-stone-900 px-4 py-1.5 text-xs font-bold text-white transition-colors hover:bg-primary"
+                      >
+                        Aplicar
+                        <ArrowRight size={12} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {pendingApplicationTransactions.length === 0 && (
+              <div className="text-center py-16 text-stone-400">
+                <Receipt className="mx-auto mb-3 opacity-20" size={36} />
+                <p className="text-xs sm:text-sm font-serif">No hay cobros pendientes de aplicar.</p>
+              </div>
+            )}
+          </div>
+        )}
         {activeSubTab === 'history' && (
           <div className="overflow-x-auto">
             <table className="w-full text-left">
@@ -721,187 +677,216 @@ export default function ReceivablesManager({ companyId = 'comp-default' }: Recei
       <AnimatePresence>
         {isRecording && (
           <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-md z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4">
-            <motion.form 
+            <motion.form
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
-              onSubmit={handleApplyGlobalPayment}
-              className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl p-6 space-y-4 max-h-[92vh] overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+20px)] sm:pb-6"
+              onSubmit={applyingTransaction ? (event) => event.preventDefault() : handleRegisterPayment}
+              className={`${applyingTransaction ? 'max-w-2xl' : 'max-w-md'} bg-white w-full rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl p-6 space-y-4 max-h-[92vh] overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+20px)] sm:pb-6`}
             >
               <div className="flex justify-between items-center border-b border-stone-100 pb-3">
                 <div>
                   <h3 className="font-serif font-bold text-stone-900 text-base">
-                    {selectedOrderId ? `Registrar Pago para Pedido #${selectedOrderId.slice(-6).toUpperCase()}` : 'Registrar Cobro / Depósito'}
+                    {applyingTransaction ? 'Aplicar cobro a pedidos' : 'Registrar Cobro / Depósito'}
                   </h3>
-                  <p className="text-stone-400 text-[10px]">Ingresa los datos del depósito o transferencia recibida</p>
+                  <p className="text-stone-400 text-[10px]">
+                    {applyingTransaction ? 'Paso 2: selecciona uno o varios pedidos para aplicar el saldo.' : 'Paso 1: registra el dinero recibido. Podras aplicarlo a pedidos en el siguiente paso.'}
+                  </p>
                 </div>
-                <button type="button" onClick={() => setIsRecording(false)} className="p-2 hover:bg-stone-50 rounded-full text-stone-400">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRecording(false);
+                    setApplyingTransaction(null);
+                    setApplyAmounts({});
+                  }}
+                  className="p-2 hover:bg-stone-50 rounded-full text-stone-400"
+                >
                   <X size={18} />
                 </button>
               </div>
 
-              <div className="space-y-3 shrink-0">
-                {/* Select Customer */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Seleccionar Deudor</label>
-                  <select
-                    required
-                    value={selectedCustomerId}
-                    onChange={e => {
-                      setSelectedCustomerId(e.target.value);
-                      const customerObj = customers.find(c => c.id === e.target.value);
-                      if (customerObj) {
-                        setPayAmount((customerObj.currentDebt || 0).toFixed(2));
-                      }
-                      setSelectedOrderId(''); // Reset order when customer is changed manually
-                    }}
-                    className="w-full px-3 py-2 border border-stone-150 rounded-xl bg-stone-50 text-xs font-semibold text-stone-700 outline-none"
-                  >
-                    <option value="">-- Elige un cliente --</option>
-                    {companyCustomers.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} {c.currentDebt && c.currentDebt > 0.01 ? `(Deuda: $${c.currentDebt.toFixed(2)})` : '(Al día / Sin deuda)'}
-                      </option>
-                    ))}
-                  </select>
+              <div className="py-3">
+                <div className="relative grid grid-cols-2 gap-3">
+                  <div className="absolute left-[25%] right-[25%] top-4 h-0.5 bg-stone-200" />
+                  <div className="relative z-10 flex flex-col items-center gap-1.5 text-center">
+                    <span className="grid h-8 w-8 place-items-center rounded-full bg-stone-900 text-xs font-bold text-white shadow-sm">
+                      {applyingTransaction ? <Check size={15} /> : '1'}
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-stone-900">Registrar cobro</span>
+                  </div>
+                  <div className="relative z-10 flex flex-col items-center gap-1.5 text-center">
+                    <span className={`grid h-8 w-8 place-items-center rounded-full border text-xs font-bold ${applyingTransaction ? 'border-stone-900 bg-stone-900 text-white shadow-sm' : 'border-stone-200 bg-white text-stone-400'}`}>
+                      2
+                    </span>
+                    <span className={`text-[10px] font-bold uppercase tracking-widest ${applyingTransaction ? 'text-stone-900' : 'text-stone-400'}`}>Aplicar a pedidos</span>
+                  </div>
                 </div>
+              </div>
+              {applyingTransaction ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-2xl bg-stone-50 border border-stone-100 p-4">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Cliente</p>
+                      <p className="mt-1 text-xs font-bold text-stone-900">{applyingTransaction.customerName}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Cobro registrado</p>
+                      <p className="mt-1 text-sm font-bold text-green-700">${applyingTransaction.amount.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Saldo disponible</p>
+                      <p className="mt-1 text-sm font-bold text-amber-600">${getUnappliedAmount(applyingTransaction).toFixed(2)}</p>
+                    </div>
+                  </div>
 
-                {/* Select Specific Order (Optional) */}
-                {selectedCustomerId && selectedCustomerOrders.length > 0 && (
-                  <div className="space-y-1 animate-in fade-in duration-200">
-                    <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block font-sans">Aplicar a Pedido Específico (Opcional)</label>
-                    <select
-                      value={selectedOrderId}
-                      onChange={e => {
-                        setSelectedOrderId(e.target.value);
-                        if (e.target.value) {
-                          const orderObj = selectedCustomerOrders.find(o => o.id === e.target.value);
-                          if (orderObj) {
-                            const balance = orderObj.total - orderObj.amountPaid;
-                            setPayAmount(balance.toFixed(2));
-                          }
-                        } else {
-                          const customerObj = customers.find(c => c.id === selectedCustomerId);
-                          setPayAmount((customerObj?.currentDebt || 0).toFixed(2));
-                        }
+                  <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-xs font-semibold text-amber-800">
+                    Marca uno o varios pedidos. Al marcar, se llena automaticamente el monto pendiente del pedido hasta donde alcance el saldo del cobro.
+                  </div>
+
+                  <div className="space-y-2">
+                    {applyingCustomerOrders.map(order => {
+                      const balance = Math.max(0, order.total - order.amountPaid);
+                      const checked = Boolean(parseFloat(applyAmounts[order.id]) || 0);
+                      const remainingAvailable = Math.max(0, getUnappliedAmount(applyingTransaction) - (applyTotal - (parseFloat(applyAmounts[order.id]) || 0)));
+                      return (
+                        <div key={order.id} className="grid grid-cols-[auto_minmax(0,1fr)_130px] gap-3 rounded-xl border border-stone-100 bg-stone-50 p-3 items-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setApplyAmounts(prev => {
+                                const current = parseFloat(prev[order.id]) || 0;
+                                if (current > 0) {
+                                  const next = { ...prev };
+                                  delete next[order.id];
+                                  return next;
+                                }
+                                const usedByOthers = Object.entries(prev).reduce((sum, [id, value]) => id === order.id ? sum : sum + (parseFloat(value) || 0), 0);
+                                const available = Math.max(0, getUnappliedAmount(applyingTransaction) - usedByOthers);
+                                return { ...prev, [order.id]: Math.min(balance, available).toFixed(2) };
+                              });
+                            }}
+                            className={`h-5 w-5 rounded border grid place-items-center ${checked ? 'bg-stone-900 border-stone-900 text-white' : 'bg-white border-stone-300 text-transparent'}`}
+                            title="Seleccionar pedido"
+                          >
+                            <Check size={13} />
+                          </button>
+                          <div className="min-w-0">
+                            <p className="font-mono text-xs font-bold text-stone-900">Pedido #{order.id.slice(-6).toUpperCase()}</p>
+                            <p className="text-[11px] text-stone-500">Total ${order.total.toFixed(2)} - pagado ${order.amountPaid.toFixed(2)} - pendiente <span className="font-bold text-red-500">${balance.toFixed(2)}</span></p>
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            max={Math.min(balance, remainingAvailable)}
+                            step="0.01"
+                            placeholder="Aplicar"
+                            value={applyAmounts[order.id] || ''}
+                            onChange={e => setApplyAmounts(prev => ({ ...prev, [order.id]: e.target.value }))}
+                            className="w-full rounded-xl border border-stone-100 bg-white px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-primary/20"
+                          />
+                        </div>
+                      );
+                    })}
+                    {applyingCustomerOrders.length === 0 && (
+                      <div className="text-center py-10 text-stone-400">
+                        <Receipt className="mx-auto mb-3 opacity-20" size={32} />
+                        <p className="text-xs">Este cliente no tiene pedidos a credito pendientes.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl bg-stone-50 border border-stone-100 px-3 py-2 text-xs font-semibold text-stone-600">
+                    Total a aplicar: <span className="font-bold text-stone-900">${applyTotal.toFixed(2)}</span>
+                    <span className="mx-2 text-stone-300">/</span>
+                    Disponible: <span className="font-bold text-stone-900">${getUnappliedAmount(applyingTransaction).toFixed(2)}</span>
+                    {applyTotal > getUnappliedAmount(applyingTransaction) + 0.009 && <span className="block text-red-500 mt-1">El total supera el saldo disponible.</span>}
+                  </div>
+
+                  <div className="pt-4 flex gap-2 border-t border-stone-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsRecording(false);
+                        setApplyingTransaction(null);
+                        setApplyAmounts({});
                       }}
-                      className="w-full px-3 py-2 border border-stone-150 rounded-xl bg-stone-50 text-xs font-semibold text-stone-700 outline-none"
+                      className="flex-1 py-3 text-stone-500 hover:bg-stone-50 rounded-xl text-xs font-bold border border-stone-100 transition-colors"
                     >
-                      <option value="">-- Distribuir entre todas las deudas (más antiguas primero) --</option>
-                      {selectedCustomerOrders.map(o => {
-                        const balance = o.total - o.amountPaid;
-                        return (
-                          <option key={o.id} value={o.id}>
-                            Pedido #{o.id.slice(-6).toUpperCase()} - Total: ${o.total.toFixed(2)} (Pendiente: ${balance.toFixed(2)})
-                          </option>
-                        );
-                      })}
-                    </select>
+                      Aplicar luego
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyRegisteredPayment}
+                      disabled={isApplyingPayment || applyTotal <= 0 || applyTotal > getUnappliedAmount(applyingTransaction) + 0.009}
+                      className="flex-[2] py-3 bg-stone-900 hover:bg-primary font-bold text-white rounded-xl text-xs flex items-center justify-center gap-1 transition-all disabled:opacity-50 shadow-sm"
+                    >
+                      <Check size={14} />
+                      {isApplyingPayment ? 'Aplicando...' : 'Aplicar a pedidos'}
+                    </button>
                   </div>
-                )}
-
-                {/* Amount */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Monto del Depósito/Pago ($)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    required
-                    placeholder="Suma pagada por el cliente"
-                    value={payAmount}
-                    onChange={e => setPayAmount(e.target.value)}
-                    className="w-full px-4 py-2 border border-stone-150 rounded-xl bg-stone-50 focus:bg-white text-sm font-bold text-stone-850 outline-none focus:ring-2 focus:ring-primary/25"
-                  />
-                </div>
-
-                {/* Method */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Canal / Medio de Depósito</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: 'transfer', label: 'Transferencia' },
-                      { id: 'deposit', label: 'Depósito Físico' },
-                      { id: 'cash', label: 'Efectivo/Caja' }
-                    ].map(canal => (
-                      <button
-                        key={canal.id}
-                        type="button"
-                        onClick={() => setPayMethod(canal.id as any)}
-                        className={`py-2 rounded-xl text-[10px] font-bold border transition-all ${
-                          payMethod === canal.id 
-                            ? 'bg-stone-900 border-stone-900 text-white shadow-sm' 
-                            : 'bg-stone-50 text-stone-500 border-stone-100 hover:bg-stone-100'
-                        }`}
+                </>
+              ) : (
+                <>
+                  <div className="space-y-3 shrink-0">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Seleccionar Deudor</label>
+                      <select
+                        required
+                        value={selectedCustomerId}
+                        onChange={e => {
+                          setSelectedCustomerId(e.target.value);
+                          const customerObj = customers.find(c => c.id === e.target.value);
+                          if (customerObj) setPayAmount((customerObj.currentDebt || 0).toFixed(2));
+                          setSelectedOrderId('');
+                        }}
+                        className="w-full px-3 py-2 border border-stone-150 rounded-xl bg-stone-50 text-xs font-semibold text-stone-700 outline-none"
                       >
-                        {canal.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Banks and ref */}
-                {payMethod !== 'cash' && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1 animate-in fade-in slide-in-from-top-1.5">
-                      <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Banco Recibido</label>
-                      <input
-                        type="text"
-                        placeholder="BCP, Pichincha, etc."
-                        required
-                        value={payBank}
-                        onChange={e => setPayBank(e.target.value)}
-                        className="w-full px-3 py-1.5 border border-stone-150 rounded-lg text-xs outline-none bg-stone-50 focus:bg-white"
-                      />
+                        <option value="">-- Elige un cliente --</option>
+                        {companyCustomers.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} {c.currentDebt && c.currentDebt > 0.01 ? `(Deuda: $${c.currentDebt.toFixed(2)})` : '(Al día / Sin deuda)'}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    <div className="space-y-1 animate-in fade-in slide-in-from-top-1.5">
-                      <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Clave/Referencia</label>
-                      <input
-                        type="text"
-                        placeholder="N° de operación"
-                        required
-                        value={payRef}
-                        onChange={e => setPayRef(e.target.value)}
-                        className="w-full px-3 py-1.5 border border-stone-150 rounded-lg text-xs outline-none bg-stone-50 focus:bg-white"
-                      />
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Monto del Depósito/Pago ($)</label>
+                      <input type="number" step="0.01" min="0.01" required placeholder="Suma pagada por el cliente" value={payAmount} onChange={e => setPayAmount(e.target.value)} className="w-full px-4 py-2 border border-stone-150 rounded-xl bg-stone-50 focus:bg-white text-sm font-bold text-stone-850 outline-none focus:ring-2 focus:ring-primary/25" />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Canal / Medio de Depósito</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[{ id: 'transfer', label: 'Transferencia' }, { id: 'deposit', label: 'Depósito Físico' }, { id: 'cash', label: 'Efectivo/Caja' }].map(canal => (
+                          <button key={canal.id} type="button" onClick={() => setPayMethod(canal.id as any)} className={`py-2 rounded-xl text-[10px] font-bold border transition-all ${payMethod === canal.id ? 'bg-stone-900 border-stone-900 text-white shadow-sm' : 'bg-stone-50 text-stone-500 border-stone-100 hover:bg-stone-100'}`}>{canal.label}</button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {payMethod !== 'cash' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1 animate-in fade-in slide-in-from-top-1.5"><label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Banco Recibido</label><input type="text" placeholder="BCP, Pichincha, etc." required value={payBank} onChange={e => setPayBank(e.target.value)} className="w-full px-3 py-1.5 border border-stone-150 rounded-lg text-xs outline-none bg-stone-50 focus:bg-white" /></div>
+                        <div className="space-y-1 animate-in fade-in slide-in-from-top-1.5"><label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">Clave/Referencia</label><input type="text" placeholder="N° de operación" required value={payRef} onChange={e => setPayRef(e.target.value)} className="w-full px-3 py-1.5 border border-stone-150 rounded-lg text-xs outline-none bg-stone-50 focus:bg-white" /></div>
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block font-sans">Notas adicionales</label>
+                      <textarea rows={2} placeholder="Ingresa notas complementarias si es necesario..." value={payNotes} onChange={e => setPayNotes(e.target.value)} className="w-full px-3 py-1.5 border border-stone-150 bg-stone-50 focus:bg-white rounded-lg text-xs outline-none resize-none" />
                     </div>
                   </div>
-                )}
 
-                {/* Notes */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block font-sans">Notas adicionales</label>
-                  <textarea
-                    rows={2}
-                    placeholder="Ingresa notas complementarias si es necesario..."
-                    value={payNotes}
-                    onChange={e => setPayNotes(e.target.value)}
-                    className="w-full px-3 py-1.5 border border-stone-150 bg-stone-50 focus:bg-white rounded-lg text-xs outline-none resize-none"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-4 flex gap-2 border-t border-stone-100">
-                <button
-                  type="button"
-                  onClick={() => setIsRecording(false)}
-                  className="flex-1 py-3 text-stone-500 hover:bg-stone-50 rounded-xl text-xs font-bold border border-transparent hover:border-stone-100 transition-colors"
-                >
-                  Regresar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !payAmount}
-                  className="flex-[2] py-3 bg-stone-900 hover:bg-primary font-bold text-white rounded-xl text-xs flex items-center justify-center gap-1 transition-all disabled:opacity-50 shadow-sm"
-                >
-                  <Save size={14} />
-                  {isSubmitting ? 'Aplicando abono...' : 'Aplicar Abono'}
-                </button>
-              </div>
+                  <div className="pt-4 flex gap-2 border-t border-stone-100">
+                    <button type="button" onClick={() => setIsRecording(false)} className="flex-1 py-3 text-stone-500 hover:bg-stone-50 rounded-xl text-xs font-bold border border-transparent hover:border-stone-100 transition-colors">Regresar</button>
+                    <button type="submit" disabled={isSubmitting || !payAmount} className="flex-[2] py-3 bg-stone-900 hover:bg-primary font-bold text-white rounded-xl text-xs flex items-center justify-center gap-1 transition-all disabled:opacity-50 shadow-sm"><Save size={14} />{isSubmitting ? 'Registrando...' : 'Siguiente'}</button>
+                  </div>
+                </>
+              )}
             </motion.form>
           </div>
         )}
-      </AnimatePresence>
-    </div>
+      </AnimatePresence>    </div>
   );
 }

@@ -95,6 +95,10 @@ export interface PaymentTransaction {
   customerId?: string;
   customerName?: string;
   amount: number;
+  appliedAmount?: number;
+  unappliedAmount?: number;
+  applicationStatus?: 'pending' | 'partial' | 'applied';
+  allocations?: Array<{ orderId: string; orderNumber?: string; amount: number; appliedAt?: any }>;
   paymentMethod: 'cash' | 'card' | 'transfer' | 'deposit';
   referenceNumber?: string;
   bankName?: string;
