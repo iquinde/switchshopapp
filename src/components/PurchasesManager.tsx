@@ -110,6 +110,9 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
   const [isProductPickerOpen, setIsProductPickerOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [selectedPurchase, setSelectedPurchase] = React.useState<Purchase | null>(null);
+  const [deleteTargetPurchase, setDeleteTargetPurchase] = React.useState<Purchase | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = React.useState(false);
+  const [isDeleting, setIsDeleting] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [productFilter, setProductFilter] = React.useState('todos');
@@ -349,28 +352,43 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
     }
   };
 
-  const handleDelete = async (purchase: Purchase) => {
-    if (!confirm('Eliminar esta compra? Se descontaran sus cantidades del inventario.')) return;
+  const requestDeletePurchase = (purchase: Purchase) => {
+    setDeleteTargetPurchase(purchase);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const executeDeletePurchase = async (purchase: Purchase) => {
     const items = getPurchaseItems(purchase);
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'purchases', purchase.id));
+    await batch.commit();
+
+    try {
+      if (!isHistoricalPurchase(purchase)) {
+        await applyCloudStockChanges(items, []);
+      }
+    } catch (stockError) {
+      console.warn('Purchase deleted, but stock restore failed', stockError);
+      alert('Compra eliminada. No se pudo descontar el stock por permisos de inventario.');
+    }
+  };
+
+  const confirmDeletePurchase = async () => {
+    if (!deleteTargetPurchase || isDeleting) return;
+    setIsDeleting(true);
+
     try {
       setFirebaseError('');
-      const batch = writeBatch(db);
-      batch.delete(doc(db, 'purchases', purchase.id));
-      await batch.commit();
-
-      try {
-        if (!isHistoricalPurchase(purchase)) {
-          await applyCloudStockChanges(items, []);
-        }
-      } catch (stockError) {
-        console.warn('Purchase deleted, but stock restore failed', stockError);
-        alert('Compra eliminada. No se pudo descontar el stock por permisos de inventario.');
-      }
+      await executeDeletePurchase(deleteTargetPurchase);
+      setIsDeleteConfirmOpen(false);
+      setDeleteTargetPurchase(null);
     } catch (error: any) {
       console.error('Purchase delete failed in Firebase', error);
       const message = error?.message || String(error);
       setFirebaseError(`No se pudo eliminar la compra en Firebase: ${message}`);
       alert(`No se pudo eliminar la compra en Firebase: ${message}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -498,7 +516,7 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
                     <th className="px-4 py-3 sm:px-6 sm:py-4 text-[9px] sm:text-xs font-bold text-stone-400 uppercase tracking-widest">Productos</th>
                     <th className="hidden sm:table-cell px-6 py-4 text-xs font-bold text-stone-400 uppercase tracking-widest">Fecha</th>
                     <th className="px-4 py-3 sm:px-6 sm:py-4 text-[9px] sm:text-xs font-bold text-stone-400 uppercase tracking-widest">Total</th>
-                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-[9px] sm:text-xs font-bold text-stone-400 uppercase tracking-widest text-right">Ops</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-[9px] sm:text-xs font-bold text-stone-400 uppercase tracking-widest">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-50">
@@ -522,14 +540,14 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
                         <td className="hidden sm:table-cell px-6 py-4 text-sm text-stone-500">{formatDate(purchase.date)}</td>
                         <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm font-bold text-stone-900">${purchase.total.toFixed(2)}</td>
                         <td className="px-4 py-3 sm:px-6 sm:py-4 text-right">
-                          <div className="flex justify-end gap-1 sm:gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex justify gap-1 sm:gap-2 opacity-50 transition-opacity hover:opacity-100 group-hover:opacity-100">
                             <button onClick={() => setSelectedPurchase(purchase)} className="p-1.5 sm:p-2 hover:bg-white rounded-lg text-stone-400 hover:text-stone-900 transition-all" title="Ver compra">
                               <Eye size={14} className="sm:w-4 sm:h-4" />
                             </button>
                             <button onClick={() => openEdit(purchase)} className="p-1.5 sm:p-2 hover:bg-white rounded-lg text-stone-400 hover:text-primary transition-all" title="Editar compra">
                               <Edit2 size={14} className="sm:w-4 sm:h-4" />
                             </button>
-                            <button onClick={() => handleDelete(purchase)} className="p-1.5 sm:p-2 hover:bg-red-50 rounded-lg text-stone-400 hover:text-red-600 transition-all" title="Eliminar compra">
+                            <button onClick={() => requestDeletePurchase(purchase)} className="p-1.5 sm:p-2 hover:bg-red-50 rounded-lg text-stone-400 hover:text-red-600 transition-all" title="Eliminar compra">
                               <Trash2 size={14} className="sm:w-4 sm:h-4" />
                             </button>
                           </div>
@@ -584,6 +602,62 @@ export default function PurchasesManager({ products, companyId = 'comp-default' 
           </div>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {isDeleteConfirmOpen && deleteTargetPurchase && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center bg-stone-950/45 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.96 }}
+              transition={{ duration: 0.18 }}
+              className="w-full max-w-sm overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xl shadow-stone-950/20"
+            >
+              <div className="h-1 bg-red-500" />
+              <div className="p-5">
+                <div className="mb-4 flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+                    <AlertTriangle size={20} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-serif text-lg font-bold text-stone-900">Eliminar compra</h3>
+                    <p className="mt-1 text-sm leading-5 text-stone-500">
+                      Esta compra se eliminar&aacute; del historial y sus cantidades se descontar&aacute;n del inventario si no est&aacute; marcada como hist&oacute;rica.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-stone-100 bg-stone-50 px-3 py-2 text-sm font-bold text-stone-800">
+                  {deleteTargetPurchase.lot}
+                </div>
+
+                <div className="mt-5 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDeleteConfirmOpen(false);
+                      setDeleteTargetPurchase(null);
+                    }}
+                    disabled={isDeleting}
+                    className="flex-1 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-600 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmDeletePurchase}
+                    disabled={isDeleting}
+                    className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isDeleting ? 'Eliminando...' : 'Eliminar'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+
       <AnimatePresence>
         {isFormOpen && (
           <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-md z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4">

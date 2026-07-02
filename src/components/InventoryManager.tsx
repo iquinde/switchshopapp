@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, Plus, Trash2, Edit2, X, Save, Image as ImageIcon, Search, Filter, ArrowUpDown, Loader2 } from 'lucide-react';
 import { storage, ref, uploadBytes, getDownloadURL, db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, updateDoc, deleteDoc, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, updateDoc, deleteDoc, doc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { Product } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { getOfflineFallbackActive, offlineDb, setOfflineFallbackActive } from '../lib/offlineDb';
@@ -31,6 +31,18 @@ const getNextSku = (products: Product[], companyId?: string) => {
   return `PRO-${String(nextNumber).padStart(3, '0')}`;
 };
 
+
+const orderIncludesProduct = (order: { items?: Array<any> }, productId: string) => {
+  return Array.isArray(order.items) && order.items.some(item => {
+    return item?.id === productId || item?.productId === productId || item?.product?.id === productId;
+  });
+};
+
+const purchaseIncludesProduct = (purchase: { items?: Array<any>; productId?: string }, productId: string) => {
+  if (purchase.productId === productId) return true;
+  return Array.isArray(purchase.items) && purchase.items.some(item => item?.productId === productId);
+};
+
 export default function InventoryManager({ products, companyId = 'comp-default' }: InventoryManagerProps) {
   const [isAdding, setIsAdding] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
@@ -43,6 +55,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
   const [alertPercentage, setAlertPercentage] = React.useState(20);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = React.useState(false);
   const [deleteTargetId, setDeleteTargetId] = React.useState<string | null>(null);
+  const [isDeleteProcessing, setIsDeleteProcessing] = React.useState(false);
 
   React.useEffect(() => {
     const loadSettings = () => {
@@ -272,32 +285,93 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
     setIsDeleteConfirmOpen(true);
   };
 
+  const getProductUsageCounts = async (product: Product) => {
+    const productCompanyId = getProductCompanyId(product);
+
+    if (getOfflineFallbackActive()) {
+      const orders = offlineDb.getOrders().filter(order => {
+        const orderCompanyId = order.companyId || 'comp-default';
+        return orderCompanyId === productCompanyId && orderIncludesProduct(order, product.id);
+      });
+      const purchases = offlineDb.getPurchases().filter(purchase => {
+        const purchaseCompanyId = purchase.companyId || 'comp-default';
+        return purchaseCompanyId === productCompanyId && purchaseIncludesProduct(purchase, product.id);
+      });
+
+      return { orders: orders.length, purchases: purchases.length };
+    }
+
+    const ordersQuery = productCompanyId === 'comp-default'
+      ? query(collection(db, 'orders'))
+      : query(collection(db, 'orders'), where('companyId', '==', productCompanyId));
+    const purchasesQuery = productCompanyId === 'comp-default'
+      ? query(collection(db, 'purchases'))
+      : query(collection(db, 'purchases'), where('companyId', '==', productCompanyId));
+
+    const [ordersSnapshot, purchasesSnapshot] = await Promise.all([
+      getDocs(ordersQuery),
+      getDocs(purchasesQuery)
+    ]);
+
+    const orders = ordersSnapshot.docs.filter(orderDoc => orderIncludesProduct(orderDoc.data(), product.id));
+    const purchases = purchasesSnapshot.docs.filter(purchaseDoc => purchaseIncludesProduct(purchaseDoc.data(), product.id));
+
+    return { orders: orders.length, purchases: purchases.length };
+  };
+
+  const inactivateProduct = async (product: Product) => {
+    if (getOfflineFallbackActive()) {
+      offlineDb.saveProduct({ id: product.id, status: 'inactive' });
+      return;
+    }
+
+    await updateDoc(doc(db, 'products', product.id), {
+      status: 'inactive'
+    });
+  };
+
   const executeDeleteProduct = async (id: string) => {
+    const product = products.find(item => item.id === id);
+    if (!product) return;
+
+    const usageCounts = await getProductUsageCounts(product);
+    const hasMovements = usageCounts.orders > 0 || usageCounts.purchases > 0;
+
+    if (hasMovements) {
+      await inactivateProduct(product);
+      alert(`Este producto ya tiene ${usageCounts.orders} venta(s) y ${usageCounts.purchases} compra(s). No se puede eliminar permanentemente, por eso fue inactivado.`);
+      return;
+    }
+
     if (getOfflineFallbackActive()) {
       offlineDb.deleteProduct(id);
       alert('Producto eliminado localmente');
       return;
     }
-    try {
-      await deleteDoc(doc(db, 'products', id));
-      alert('Producto eliminado exitosamente');
-    } catch (error) {
-      console.warn("Delete product failed in cloud, performing local delete:", error);
-      setOfflineFallbackActive(true);
-      offlineDb.deleteProduct(id);
-      alert('Producto eliminado localmente');
-    }
+
+    await deleteDoc(doc(db, 'products', id));
+    alert('Producto eliminado exitosamente');
   };
 
   const confirmDeleteProduct = async () => {
-    if (!deleteTargetId) return;
+    if (!deleteTargetId || isDeleteProcessing) return;
     const wasEditingDeletedProduct = editingId === deleteTargetId;
-    await executeDeleteProduct(deleteTargetId);
-    setIsDeleteConfirmOpen(false);
-    setDeleteTargetId(null);
+    setIsDeleteProcessing(true);
 
-    if (wasEditingDeletedProduct) {
-      resetForm();
+    try {
+      await executeDeleteProduct(deleteTargetId);
+      setIsDeleteConfirmOpen(false);
+      setDeleteTargetId(null);
+
+      if (wasEditingDeletedProduct) {
+        resetForm();
+      }
+    } catch (error: any) {
+      const message = error?.message || String(error);
+      console.error('No se pudo validar o eliminar el producto:', error);
+      alert(`No se pudo completar la accion. Revisa tu conexion o permisos e intenta nuevamente. Detalle: ${message}`);
+    } finally {
+      setIsDeleteProcessing(false);
     }
   };
 
@@ -391,7 +465,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                     <th className="hidden sm:table-cell px-6 py-4 text-xs font-bold text-stone-400 uppercase tracking-widest">SKU</th>
                     <th className="px-4 py-3 sm:px-6 sm:py-4 text-[9px] sm:text-xs font-bold text-stone-400 uppercase tracking-widest">Precio</th>
                     <th className="px-4 py-3 sm:px-6 sm:py-4 text-[9px] sm:text-xs font-bold text-stone-400 uppercase tracking-widest">Stock</th>
-                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-[9px] sm:text-xs font-bold text-stone-400 uppercase tracking-widest text-right">Ops</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-[9px] sm:text-xs font-bold text-stone-400 uppercase tracking-widest">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-50">
@@ -480,7 +554,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                         </div>
                       </td>
                       <td className="px-4 py-3 sm:px-6 sm:py-4 text-right">
-                        <div className="flex justify-end gap-1 sm:gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex justify-end gap-1 sm:gap-2 opacity-50 transition-opacity hover:opacity-100 group-hover:opacity-100">
                           <button 
                             onClick={() => handleEdit(product)} 
                             className="p-1.5 sm:p-2 hover:bg-white rounded-lg text-stone-400 hover:text-primary transition-all"
@@ -711,7 +785,7 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                   <div className="min-w-0">
                     <h3 className="font-serif text-lg font-bold text-stone-900">Eliminar producto</h3>
                     <p className="mt-1 text-sm leading-5 text-stone-500">
-                      Esta acción quitará el producto del inventario. No se podrá ver en la tienda ni en nuevos pedidos.
+                      Si el producto ya tiene compras o ventas registradas, no se eliminará permanentemente: quedará inactivo para conservar el historial.
                     </p>
                   </div>
                 </div>
@@ -727,16 +801,18 @@ export default function InventoryManager({ products, companyId = 'comp-default' 
                       setIsDeleteConfirmOpen(false);
                       setDeleteTargetId(null);
                     }}
-                    className="flex-1 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-600 transition-colors hover:bg-stone-50"
+                    disabled={isDeleteProcessing}
+                    className="flex-1 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-600 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Cancelar
                   </button>
                   <button
                     type="button"
                     onClick={confirmDeleteProduct}
-                    className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-red-700"
+                    disabled={isDeleteProcessing}
+                    className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Eliminar
+                    {isDeleteProcessing ? 'Validando...' : 'Eliminar'}
                   </button>
                 </div>
               </div>

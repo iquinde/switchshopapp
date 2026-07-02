@@ -35,6 +35,33 @@ const STATUS_FILTER_OPTIONS: SearchableSelectOption[] = [
   { value: 'cancelled', label: 'Cancelados' },
 ];
 
+const getOrderDate = (value: any) => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === 'string') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (value?.seconds) {
+    const date = new Date(value.seconds * 1000);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value?.toDate === 'function') {
+    const date = value.toDate();
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+};
+
+const formatOrderDate = (value: any) => {
+  const date = getOrderDate(value);
+  return date ? date.toLocaleDateString('es-EC') : 'Sin fecha';
+};
+
 const PAYMENT_FILTER_OPTIONS: SearchableSelectOption[] = [
   { value: 'todos', label: 'Todos' },
   { value: 'paid', label: 'Pagados' },
@@ -1373,7 +1400,9 @@ const omitUndefined = <T extends Record<string, any>>(value: T): T => {
               <table className="w-full text-left">
                 <thead className="bg-stone-50 border-b border-stone-100">
                   <tr>
-                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] font-bold text-stone-400 uppercase tracking-widest">Pedido ID / Cliente</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] font-bold text-stone-400 uppercase tracking-widest">Pedido</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] font-bold text-stone-400 uppercase tracking-widest">Cliente</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] font-bold text-stone-400 uppercase tracking-widest">Fecha</th>
                     <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] font-bold text-stone-400 uppercase tracking-widest">Total</th>
                     <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] font-bold text-stone-400 uppercase tracking-widest">Despacho</th>
                     <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] font-bold text-stone-400 uppercase tracking-widest">Monto Pagado</th>
@@ -1387,25 +1416,24 @@ const omitUndefined = <T extends Record<string, any>>(value: T): T => {
                       <tr key={order.id} className="hover:bg-stone-50/50 transition-colors group">
                         <td className="px-4 py-3 sm:px-6 sm:py-4">
                           <div className="font-bold text-stone-900 text-xs sm:text-sm">
-                            #{order.id.slice(-6).toUpperCase()}
+                            #{order.id.slice(-8).toUpperCase()}
                           </div>
-                          <div className="text-stone-500 text-[10px] sm:text-xs">
+                        </td>
+                        <td className="px-4 py-3 sm:px-6 sm:py-4">
+                          <div className="font-semibold text-stone-700 text-[10px] sm:text-xs">
                             {order.customerName || 'Cliente General'}
                           </div>
-                          {order.createdAt && (
-                            <div className="text-[9px] text-stone-400 flex items-center gap-1 mt-0.5">
-                              <Calendar size={10} />
-                              {new Date(order.createdAt.seconds * 1000).toLocaleDateString('es-ES')}
-                            </div>
-                          )}
+                        </td>
+                        <td className="px-4 py-3 sm:px-6 sm:py-4">
+                          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-stone-500 sm:text-xs">
+                            <Calendar size={12} />
+                            {formatOrderDate(order.createdAt)}
+                          </div>
                         </td>
                         <td className="px-4 py-3 sm:px-6 sm:py-4">
                           <div className="font-bold text-stone-900 text-xs sm:text-sm">
                             ${order.total.toFixed(2)}
                           </div>
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase mt-1 inline-block ${getStatusBadge(order.status)}`}>
-                            {order.status === 'completed' ? 'Completado' : order.status === 'dispatched' ? 'Enviado' : order.status === 'cancelled' ? 'Cancelado' : 'Pendiente'}
-                          </span>
                         </td>
                         <td className="px-4 py-3 sm:px-6 sm:py-4">
                           <div className="flex flex-col items-start">

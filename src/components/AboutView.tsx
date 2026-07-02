@@ -30,8 +30,8 @@ const DEFAULT_ABOUT_CONTENT = {
 const getAboutSections = (settings?: StoreSettings) => {
   const savedSections = settings?.aboutSections
     ?.map(section => ({
-      title: section.title?.trim() || 'Titulo',
-      paragraph: section.paragraph?.trim() || 'Parrafo'
+      title: section.title?.trim() || '',
+      paragraph: section.paragraph?.trim() || ''
     }))
     .filter(section => section.title || section.paragraph)
     .slice(0, 5);
@@ -114,10 +114,12 @@ export default function AboutView({ settings, activeCompany, storeBasePath = '' 
             <div className="mt-10 space-y-10">
               {aboutSections.map((section, index) => (
                 <section key={`${section.title}-${index}`} className="space-y-5">
-                  <h2 className="text-2xl font-bold text-stone-950">{section.title}</h2>
-                  <p className="mx-auto max-w-3xl text-base leading-8 text-stone-400 sm:text-lg sm:leading-9">
-                    {section.paragraph}
-                  </p>
+                  {section.title && <h2 className="text-2xl font-bold text-stone-950">{section.title}</h2>}
+                  {section.paragraph && (
+                    <p className="mx-auto max-w-3xl whitespace-pre-line text-base leading-8 text-stone-400 sm:text-lg sm:leading-9">
+                      {section.paragraph}
+                    </p>
+                  )}
                 </section>
               ))}
             </div>
